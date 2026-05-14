@@ -1,0 +1,7 @@
+{
+  "languages": {
+    "C++": {
+      "formatter": "language_server",
+    },
+  },
+}
