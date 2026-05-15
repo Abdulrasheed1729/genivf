@@ -23,7 +23,9 @@ TEST_DEPS = $(patsubst %,$(__TEST_DEPS))
 $(BUILDDIR)/%.o: %.h $(__TEST_DEPS)
 	$(CC) -c  -o $@ $< $(CFLAGS)
 
-test: $(OBJ)
+point_test: $(OBJ)
 	$(CC) point.test.cpp -o $@ $^ $(TEST_CFLAGS)
 
+genivf_test: $(OBJ)
+	$(CC) genivf.test.cpp -o $@ $^ $(TEST_CFLAGS)
 # clang++ -c -Wall -Werror -Wextra -std=c++23 -o build/genivf.o genivf.cpp -I.
