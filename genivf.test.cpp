@@ -52,3 +52,5 @@ TEST_CASE("test out the distance l2") {
 // - [ ] Test out add 
 // NOTE: train must be called before add
 // and there should be some kind of exception throw while calling add before train
+// The train and add functions seems kind of hard to test, i don't know probably due to floating points, I don't know.
+// NOTE: so what I am thinking of doing right now is to just train wih Dengue virus sequence and use python with a tsv file i generated and use seaborn or matplotlib for visualisation.
