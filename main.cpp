@@ -15,6 +15,6 @@ main()
 	// genivf::IndexIVF ivf{2, 3};
 	// ivf.train(points, 100, 1e-5);
 	// std::println("Training a small IVF");
-
-  sayHello();
+    
+    sayHello();
 }
