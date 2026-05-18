@@ -1,31 +1,35 @@
-BUILDDIR=build
-CC=clang++
-CFLAGS=-Wall -Werror -Wextra -std=c++23 -I.
-TEST_CFLAGS=-Wall -Wextra -std=c++23 -I.
-OUT=main
+BUILDDIR    = build
+CC          = clang++
+CFLAGS      = -Wall -Werror -Wextra -std=c++23 -Iinclude
+# -Itests resolves doctest.h now that it lives in tests/.
+TEST_CFLAGS = -Wall -Wextra -std=c++23 -Iinclude -Itests
 
-_DEPS=genivf.hpp
-DEPS = $(patsubst %, . %,$(_DEPS))
+OBJ = $(BUILDDIR)/genivf.o
 
-_OBJ=genivf.o
-OBJ = $(patsubst %,$(BUILDDIR)/%,$(_OBJ))
+.PHONY: all clean
 
-$(BUILDDIR)/%.o: %.cpp $(DEPS)
-	$(CC) -c  -o $@ $< $(CFLAGS)
+all: genivf point_test genivf_test io_test
 
-genivf: $(OBJ)
-	$(CC) main.cpp -o $@ $^ $(CFLAGS)
+# Create the build directory if it does not exist.
+$(BUILDDIR):
+	mkdir -p $(BUILDDIR)
 
+# Compile the library object. Headers listed explicitly so Make re-builds when
+# they change.
+$(BUILDDIR)/genivf.o: src/genivf.cpp include/genivf.hpp include/utils.hpp | $(BUILDDIR)
+	$(CC) -c -o $@ $< $(CFLAGS)
 
-__TEST_DEPS=doctest.h
-TEST_DEPS = $(patsubst %,$(__TEST_DEPS))
+genivf: main.cpp $(OBJ)
+	$(CC) main.cpp -o $@ $(OBJ) $(CFLAGS)
 
-$(BUILDDIR)/%.o: %.h $(__TEST_DEPS)
-	$(CC) -c  -o $@ $< $(CFLAGS)
+point_test: tests/point.test.cpp $(OBJ)
+	$(CC) tests/point.test.cpp -o $@ $(OBJ) $(TEST_CFLAGS)
 
-point_test: $(OBJ)
-	$(CC) point.test.cpp -o $@ $^ $(TEST_CFLAGS)
+genivf_test: tests/genivf.test.cpp $(OBJ)
+	$(CC) tests/genivf.test.cpp -o $@ $(OBJ) $(TEST_CFLAGS)
 
-genivf_test: $(OBJ)
-	$(CC) genivf.test.cpp -o $@ $^ $(TEST_CFLAGS)
-# clang++ -c -Wall -Werror -Wextra -std=c++23 -o build/genivf.o genivf.cpp -I.
+io_test: tests/io.test.cpp $(OBJ)
+	$(CC) tests/io.test.cpp -o $@ $(OBJ) $(TEST_CFLAGS)
+
+clean:
+	rm -rf $(BUILDDIR) genivf point_test genivf_test io_test
