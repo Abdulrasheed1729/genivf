@@ -1,0 +1,14 @@
+[
+  {
+    "label": "Setup Meson",
+    "command": "meson setup build",
+  },
+  {
+    "label": "Build",
+    "command": "meson compile -C build",
+  },
+  {
+    "label": "Run",
+    "command": "build/genivf",
+  },
+]
