@@ -135,7 +135,8 @@ struct IndexIVF
     explicit IndexIVF(size_t num_cells, size_t dim);
 
     void train(std::span<const Point> points,
-               size_t max_iter = 100);
+               size_t max_iter = 100,
+               double epsilon = 1e-6);
 
     // Insert points into the index. Each point is assigned to the centroid
     // with the smallest Hamming distance and stored in that cell's inverted
@@ -149,8 +150,7 @@ struct IndexIVF
     //
     // `nprobe`: number of Voronoi cells to probe. Higher values increase recall
     //           at the cost of latency. Must satisfy 1 <= nprobe <= num_cells.
-    // `metric`: distance metric for both centroid ranking and candidate
-    // scoring.
+    // `metric`: distance metric for both centroid ranking and candidate scoring.
     //           For best recall use HAMMING, which matches the training metric.
     //
     // Throws `std::logic_error` if `train()` has not been called.
