@@ -1,8 +1,8 @@
 #include "genivf.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cassert>
-#include <numeric>
 #include <random>
 #include <stdexcept>
 #include <string>
@@ -66,10 +66,39 @@ IndexIVF::find_nearest_centroid(const Point& point) const
     return nearest;
 }
 
+// Precomputed per-bit lookup: kBitTable[v][b] == (v >> b) & 1u
+static constexpr auto kBitTable = []() {
+    std::array<std::array<uint8_t, 8>, 256> table{};
+    for (int v = 0; v < 256; ++v) {
+        for (int b = 0; b < 8; ++b) {
+            table[v][b] = static_cast<uint8_t>((v >> b) & 1u);
+        }
+    }
+    return table;
+}();
+
+static size_t
+nearest_centroid_idx(const Point& point,
+                     const std::vector<Point>& centroids,
+                     size_t dim)
+{
+    size_t nearest = 0;
+    uint32_t min_dist = distance_hamming(
+      point.values.data(), centroids[0].values.data(), dim);
+
+    for (size_t j = 1; j < centroids.size(); ++j) {
+        const uint32_t dist = distance_hamming(
+          point.values.data(), centroids[j].values.data(), dim);
+        if (dist < min_dist) {
+            min_dist = dist;
+            nearest = j;
+        }
+    }
+    return nearest;
+}
+
 void
-IndexIVF::train(std::span<const Point> points,
-                size_t max_iter,
-                double /* epsilon — unused for binary centroids */)
+IndexIVF::train(std::span<const Point> points, size_t max_iter)
 {
     if (points.size() < d_num_cells) {
         throw std::invalid_argument(
@@ -82,82 +111,93 @@ IndexIVF::train(std::span<const Point> points,
         }
     }
 
-    // Clear both stores so re-training is safe.
     d_clusters.clear();
     d_vectors.clear();
 
     const size_t n = points.size();
-
-    // Initialise centroids by randomly sampling k distinct points (uniform
-    // random initialisation). K-means++ would give faster convergence and is a
-    // natural future improvement.
     std::mt19937 rng(d_seed);
-    std::vector<size_t> idx(n);
-    std::iota(idx.begin(), idx.end(), 0);
-    std::shuffle(idx.begin(), idx.end(), rng);
 
     std::vector<Point> centroids;
     centroids.reserve(d_num_cells);
-    for (size_t i = 0; i < d_num_cells; ++i) {
-        centroids.emplace_back(i, points[idx[i]].values);
+
+    std::uniform_int_distribution<size_t> idx_dist(0, n - 1);
+    centroids.push_back(points[idx_dist(rng)]);
+
+    // min_dists[i] = squared Hamming distance to the nearest chosen centroid
+    std::vector<uint32_t> min_dists(n, UINT32_MAX);
+    for (size_t c = 1; c < d_num_cells; ++c) {
+        uint64_t total_weight = 0;
+
+        for (size_t i = 0; i < n; ++i) {
+            const uint32_t d = distance_hamming(
+              points[i].values.data(), centroids[c - 1].values.data(), d_dim);
+            if (d < min_dists[i]) {
+                min_dists[i] = d;
+            }
+            total_weight += static_cast<uint64_t>(min_dists[i]) * min_dists[i];
+        }
+
+        if (total_weight == 0) {
+            // All remaining points are duplicates of existing centroids.
+            centroids.push_back(points[idx_dist(rng)]);
+            continue;
+        }
+
+        std::uniform_int_distribution<uint64_t> pick(1, total_weight);
+        const uint64_t threshold = pick(rng);
+        uint64_t cumulative = 0;
+        size_t picked = n - 1;
+        for (size_t i = 0; i < n; ++i) {
+            cumulative += static_cast<uint64_t>(min_dists[i]) * min_dists[i];
+            if (cumulative >= threshold) {
+                picked = i;
+                break;
+            }
+        }
+        centroids.push_back(points[picked]);
     }
 
-    // Each entry holds the indices (into `points`) of the points assigned to
-    // cluster i in the current iteration.
     std::vector<std::vector<size_t>> assignments(d_num_cells);
+    std::vector<uint32_t> bit_counts(d_dim * 8); // scratch buffer, reused
 
     for (size_t iter = 0; iter < max_iter; ++iter) {
-
         for (auto& a : assignments) {
             a.clear();
         }
 
-        // Assign each point to its nearest centroid by Hamming distance.
+        // Assign each point to its nearest centroid.
         for (size_t i = 0; i < n; ++i) {
-            size_t nearest = 0;
-            uint32_t min_dist = distance_hamming(
-              points[i].values.data(), centroids[0].values.data(), d_dim);
-
-            for (size_t j = 1; j < d_num_cells; ++j) {
-                const uint32_t dist = distance_hamming(
-                  points[i].values.data(), centroids[j].values.data(), d_dim);
-                if (dist < min_dist) {
-                    min_dist = dist;
-                    nearest = j;
-                }
-            }
-            assignments[nearest].push_back(i);
+            assignments[nearest_centroid_idx(points[i], centroids, d_dim)]
+              .push_back(i);
         }
 
-        // Recompute each centroid as the per-bit majority vote of its assigned
-        // points. This is the Fréchet mean under Hamming distance: bit j of
-        // the new centroid is 1 iff strictly more than half the assigned
-        // points have bit j set.
-        //
-        // Convergence check: binary centroids are discrete, so movement is
-        // measured in Hamming distance. Any bit change means not converged.
         bool converged = true;
 
         for (size_t i = 0; i < d_num_cells; ++i) {
             if (assignments[i].empty()) {
-                // Cluster lost all members — keep the old centroid in place.
-                // Alternative: re-seed from the highest-error point
-                // (as done in some FAISS variants).
+                // Re-seed empty cluster with a random point.
+                centroids[i] = points[idx_dist(rng)];
+                converged = false;
                 continue;
             }
 
             const size_t count = assignments[i].size();
-            // Accumulate per-bit set-counts across all assigned points.
-            // d_dim bytes × 8 bits/byte = total binary dimensions.
-            std::vector<uint32_t> bit_counts(d_dim * 8, 0u);
+            std::fill(bit_counts.begin(), bit_counts.end(), 0u);
 
+            // Accumulate per-bit set-counts via precomputed lookup table.
             for (const size_t pt_idx : assignments[i]) {
                 for (size_t byte_pos = 0; byte_pos < d_dim; ++byte_pos) {
                     const uint8_t byte_val = points[pt_idx].values[byte_pos];
-                    for (int bit = 0; bit < 8; ++bit) {
-                        bit_counts[byte_pos * 8 + bit] +=
-                          static_cast<uint32_t>((byte_val >> bit) & 1u);
-                    }
+                    const auto& bits = kBitTable[byte_val];
+                    const size_t base = byte_pos * 8;
+                    bit_counts[base + 0] += bits[0];
+                    bit_counts[base + 1] += bits[1];
+                    bit_counts[base + 2] += bits[2];
+                    bit_counts[base + 3] += bits[3];
+                    bit_counts[base + 4] += bits[4];
+                    bit_counts[base + 5] += bits[5];
+                    bit_counts[base + 6] += bits[6];
+                    bit_counts[base + 7] += bits[7];
                 }
             }
 
@@ -165,11 +205,14 @@ IndexIVF::train(std::span<const Point> points,
             std::vector<uint8_t> new_bytes(d_dim, 0u);
             for (size_t byte_pos = 0; byte_pos < d_dim; ++byte_pos) {
                 uint8_t new_byte = 0;
-                for (int bit = 0; bit < 8; ++bit) {
-                    if (bit_counts[byte_pos * 8 + bit] * 2 > count) {
-                        new_byte |= static_cast<uint8_t>(1u << bit);
-                    }
-                }
+                if (bit_counts[byte_pos * 8 + 0] * 2 > count) new_byte |= 1u << 0;
+                if (bit_counts[byte_pos * 8 + 1] * 2 > count) new_byte |= 1u << 1;
+                if (bit_counts[byte_pos * 8 + 2] * 2 > count) new_byte |= 1u << 2;
+                if (bit_counts[byte_pos * 8 + 3] * 2 > count) new_byte |= 1u << 3;
+                if (bit_counts[byte_pos * 8 + 4] * 2 > count) new_byte |= 1u << 4;
+                if (bit_counts[byte_pos * 8 + 5] * 2 > count) new_byte |= 1u << 5;
+                if (bit_counts[byte_pos * 8 + 6] * 2 > count) new_byte |= 1u << 6;
+                if (bit_counts[byte_pos * 8 + 7] * 2 > count) new_byte |= 1u << 7;
                 new_bytes[byte_pos] = new_byte;
             }
 
