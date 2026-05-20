@@ -2,3 +2,4 @@ build/
 scratch.md
 scratch.org
 *.givf
+*.tsv
