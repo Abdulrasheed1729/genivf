@@ -26,9 +26,10 @@ TEST_CASE("Point: operator[] returns correct byte")
     CHECK_EQ(p[1], static_cast<uint8_t>(0x55));
 }
 
-TEST_CASE("Point: operator[] throws std::out_of_range for out-of-bounds index")
+TEST_CASE("Point: at() throws std::out_of_range for out-of-bounds index")
 {
     genivf::Point p(1, { 0x01, 0x02 });
     // HACK: void cast to suppress unused-result warning
-    CHECK_THROWS_AS((void)p[2], std::out_of_range);
+    CHECK_THROWS_AS((void)p.at(2), std::out_of_range);
 }
+

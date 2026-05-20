@@ -1,6 +1,9 @@
+#pragma once
+
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace genivf::seq {
 
@@ -24,21 +27,15 @@ struct FastaScanner
 {
 
   public:
-    explicit FastaScanner(const std::string& filename)
-      : filename(filename)
-      , file(filename)
-    {
-        if (!file.is_open()) {
-            throw std::runtime_error("Failed to open file " + filename);
-        }
-    };
-    bool hasNext() const;
-    FastaRecord next();
+    explicit FastaScanner(const std::string& filename);
+    [[nodiscard]] bool hasNext() const;
+    [[nodiscard]] FastaRecord next();
 
     ~FastaScanner() { file.close(); };
 
   private:
     std::string filename;
+    std::vector<char> io_buffer;
     std::ifstream file;
     std::string pending_header;
     bool has_pending_header = false;
@@ -50,20 +47,15 @@ struct FastqScanner
 {
 
   public:
-    explicit FastqScanner(const std::string& filename)
-      : filename(filename)
-      , file(filename)
-    {
-        if (!file.is_open()) {
-            throw std::runtime_error("Failed to open file " + filename);
-        }
-    };
+    explicit FastqScanner(const std::string& filename);
     ~FastqScanner() { file.close(); };
-    bool hasNext();
-    FastqRecord next();
+    [[nodiscard]] bool hasNext();
+    [[nodiscard]] FastqRecord next();
 
   private:
     std::string filename;
+    std::vector<char> io_buffer;
     std::ifstream file;
 };
 }
+

@@ -56,8 +56,21 @@ struct Point
     Point& operator=(Point&&) = default;
 
     // Returns the packed byte at position `index` (not a bit index).
-    // Throws `std::out_of_range` if `index` is out of range.
-    [[nodiscard]] uint8_t operator[](size_t index) const;
+    [[nodiscard]] uint8_t operator[](size_t index) const noexcept
+    {
+        return values[index];
+    }
+
+    // Checked access. Throws `std::out_of_range` if `index` is out of range.
+    [[nodiscard]] uint8_t at(size_t index) const
+    {
+        if (index >= values.size()) {
+            throw std::out_of_range("Point::at: index " +
+                                    std::to_string(index) + " out of range [0, " +
+                                    std::to_string(values.size()) + ")");
+        }
+        return values[index];
+    }
 };
 
 [[nodiscard]] inline uint32_t
@@ -113,6 +126,7 @@ struct Cluster
 {
     Point centroid;
     std::vector<size_t> point_indices;
+    std::vector<uint8_t> flat_vectors; // Contiguous block of vector data for points assigned to this cell
     size_t id;
 
     Cluster(size_t cell_id, Point ctr)
@@ -183,6 +197,12 @@ struct IndexIVF
     // Returns the index into d_clusters of the centroid with the minimum
     // Hamming distance to `point`.
     [[nodiscard]] size_t find_nearest_centroid(const Point& point) const;
+
+    template <MetricType Metric>
+    [[nodiscard]] std::vector<SearchResult> search_impl(
+      const Point& query,
+      size_t k,
+      size_t nprobe) const;
 };
 
 } // namespace genivf

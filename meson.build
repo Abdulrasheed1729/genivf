@@ -6,7 +6,8 @@ project(
     default_options: [
         'cpp_std=c++23',
         'warning_level=2', # -Wall -Wextra on GCC/Clang
-        'buildtype=debug'
+        'buildtype=release',
+        'b_lto=true'
     ],
 )
 
@@ -16,7 +17,7 @@ lib_args = ['-Werror']
 
 genivf_lib = static_library(
     'genivf',
-    'src/genivf.cpp',
+    ['src/genivf.cpp', 'src/seq.cpp'],
     include_directories: inc,
     cpp_args: lib_args,
 )
@@ -34,3 +35,5 @@ executable(
 )
 
 subdir('tests')
+subdir('examples')
+
