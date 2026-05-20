@@ -11,4 +11,12 @@
     "label": "Run",
     "command": "build/genivf",
   },
+  {
+    "label": "Run Tests",
+    "command": "build/tests/genivf_test && build/tests/io_test && build/tests/point_test",
+  },
+  {
+    "label": "Run examples",
+    "command": "build/examples/simple",
+  },
 ]

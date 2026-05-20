@@ -215,6 +215,22 @@ load_index(const std::filesystem::path& path)
           "genivf::io::load_index: vector count mismatch in file");
     }
 
+    // Populate the contiguous flat_vectors buffers in d_clusters from the loaded d_vectors
+    for (auto& cluster : index.d_clusters) {
+        cluster.flat_vectors.resize(cluster.point_indices.size() * dim);
+        for (size_t i = 0; i < cluster.point_indices.size(); ++i) {
+            const size_t pid = cluster.point_indices[i];
+            auto it = index.d_vectors.find(pid);
+            if (it == index.d_vectors.end()) {
+                throw std::runtime_error(
+                  "genivf::io::load_index: referential integrity violation — cluster references non-existent point ID " +
+                  std::to_string(pid));
+            }
+            std::copy(it->second.values.begin(), it->second.values.end(),
+                      &cluster.flat_vectors[i * dim]);
+        }
+    }
+
     return index;
 }
 
