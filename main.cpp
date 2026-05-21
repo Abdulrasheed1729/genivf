@@ -1,11 +1,14 @@
+#include "flat.hpp"
 #include "genivf.hpp"
 #include "io.hpp"
 #include "seq.hpp"
 
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <strings.h>
+#include <unordered_set>
 #include <vector>
 
 using namespace genivf;
@@ -244,6 +247,43 @@ build_ivf_index(const std::string& index_path,
     return true;
 }
 
+bool
+build_flat_index(const std::string& index_path, const std::string& data_path)
+{
+    auto d_bits = kmer_vector_size<5>();
+    auto [vectors, windows] = process_fasta_file(data_path);
+
+    assert(!vectors.empty());
+
+    auto d_bytes = d_bits >> 3;
+    auto nb = vectors.size();
+
+    IndexFlat index(d_bytes, nb);
+
+    std::vector<uint8_t> packed_buffer;
+    std::vector<Point> points;
+    for (size_t i = 0; i < vectors.size(); ++i) {
+        pack_kmer_one_hot(vectors[i], packed_buffer);
+        points.push_back(Point(i, packed_buffer));
+    }
+
+    index.add(points);
+    io::save_flat_index(index, index_path);
+
+    std::cout << "Flat index saved to " << index_path << "\n";
+
+    std::ofstream meta_file(index_path + ".meta.ivf.tsv");
+    for (size_t i = 0; i < windows.size(); ++i) {
+        meta_file << i << "\t"
+                  << (windows[i].sequence_name ? *windows[i].sequence_name : "")
+                  << "\t" << windows[i].start_pos << "\n";
+    }
+
+    std::cout << "Metadata saved to " << index_path << ".meta.ivf.tsv\n";
+
+    return true;
+}
+
 std::vector<SearchResult>
 query_index(const IndexIVF& loaded_index,
             const std::unordered_map<size_t, WindowMetaData>& meta_map,
@@ -282,13 +322,122 @@ query_index(const IndexIVF& loaded_index,
     return results;
 }
 
+std::vector<SearchResult>
+query_index(const IndexFlat& loaded_index,
+            const std::unordered_map<size_t, WindowMetaData>& meta_map,
+            const FastqRecord& query_sequence,
+            int k,
+            size_t nprobe,
+            size_t query_id,
+            std::ofstream& tsv_file)
+{
+    KmerVector query_vec_unpacked =
+      kmer_one_hot<KMER_K>(query_sequence.sequence);
+    std::vector<uint8_t> query_vec;
+    pack_kmer_one_hot(query_vec_unpacked, query_vec);
+    Point query_point(query_id, query_vec);
+
+    auto t_start = std::chrono::steady_clock::now();
+    auto results =
+      loaded_index.search(query_point, k, nprobe, MetricType::HAMMING);
+
+    auto t_end = std::chrono::steady_clock::now();
+    double elapsed =
+      std::chrono::duration<double, std::milli>(t_end - t_start).count();
+    std::cout << "Query time: " << elapsed << "ms.\n";
+    for (int i = 0; i < k; ++i) {
+        const auto& meta = meta_map.at(results[i].id);
+        std::cout << (meta.sequence_name ? *meta.sequence_name : "") << ":"
+                  << meta.start_pos << " (distance: " << results[i].distance
+                  << ") " << query_sequence.header << "\n";
+
+        tsv_file << query_id << "\t" << query_sequence.header << "\t"
+                 << (meta.sequence_name ? *meta.sequence_name : "") << "\t"
+                 << meta.start_pos << "\t" << results[i].distance << "\n";
+    }
+
+    return results;
+}
+
+void
+measure_ivf_accuracy(const IndexIVF& ivf_index,
+                     const IndexFlat& flat_index,
+                     const std::string& fastq_path,
+                     size_t k,
+                     const std::vector<size_t>& nprobes)
+{
+    FastqScanner scanner(fastq_path);
+    size_t query_count = 0;
+
+    // Per-nprobe accumulators for recall
+    std::map<size_t, double> recall_sum;
+    for (auto nprobe : nprobes) {
+        recall_sum[nprobe] = 0.0;
+    }
+
+    auto t_start_all = std::chrono::steady_clock::now();
+
+    while (scanner.hasNext()) {
+        auto record = scanner.next();
+
+        KmerVector query_vec_unpacked = kmer_one_hot<KMER_K>(record.sequence);
+        std::vector<uint8_t> query_vec;
+        pack_kmer_one_hot(query_vec_unpacked, query_vec);
+        Point query_point(query_count, query_vec);
+
+        // Exact search from flat index (ground truth)
+        auto exact_results =
+          flat_index.search(query_point, k, 1, MetricType::HAMMING);
+
+        std::unordered_set<size_t> exact_ids;
+        for (const auto& r : exact_results) {
+            exact_ids.insert(r.id);
+        }
+
+        // IVF search at each nprobe
+        for (auto nprobe : nprobes) {
+            auto ivf_results =
+              ivf_index.search(query_point, k, nprobe, MetricType::HAMMING);
+
+            size_t hits = 0;
+            for (const auto& r : ivf_results) {
+                if (exact_ids.count(r.id)) {
+                    hits++;
+                }
+            }
+
+            double recall = static_cast<double>(hits) / static_cast<double>(k);
+            recall_sum[nprobe] += recall;
+        }
+
+        query_count++;
+    }
+
+    auto t_end_all = std::chrono::steady_clock::now();
+    double total_elapsed =
+      std::chrono::duration<double, std::milli>(t_end_all - t_start_all)
+        .count();
+
+    std::cout << "\n=== IVF Accuracy Report ===\n";
+    std::cout << "Total queries: " << query_count << "\n";
+    std::cout << "Total time: " << total_elapsed << " ms\n";
+    std::cout << "k = " << k << "\n\n";
+
+    for (auto nprobe : nprobes) {
+        double avg_recall =
+          recall_sum[nprobe] / static_cast<double>(query_count);
+        std::cout << "  nprobe = " << nprobe << "  recall@" << k << " = "
+                  << (avg_recall * 100.0) << "%\n";
+    }
+}
+
 int
 main()
 {
     genivf::log::set_level(genivf::log::Level::INFO);
 
     std::string ref_seq = "data/dengue_ref_sequences.fasta";
-    std::string left_seq = "data/right.fq";
+    std::string left_seq = "data/left.fq";
 
     auto is_ivf_index_built = build_ivf_index("main.givf", ref_seq, 256);
     if (!is_ivf_index_built) {
@@ -348,4 +497,17 @@ main()
     std::cout << "Total queries processed: " << count << "\n";
     std::cout << "Total querying execution time: " << total_elapsed << " ms.\n";
     std::cout << "Results collected into: query_results.tsv\n";
+
+    // Build flat index for accuracy comparison
+    auto is_flat_index_built = build_flat_index("main_flat.givf", ref_seq);
+    if (!is_flat_index_built) {
+        std::println("Failed to build flat index.");
+        return 1;
+    }
+
+    auto flat_index = io::load_flat_index("main_flat.givf");
+
+    // Measure IVF accuracy using the flat index as ground truth
+    std::vector<size_t> nprobes = { 1, 2, 4, 8, 16, 32, 64, 128, 256 };
+    measure_ivf_accuracy(loaded_index, flat_index, left_seq, k, nprobes);
 }

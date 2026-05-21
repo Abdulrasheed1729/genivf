@@ -1,6 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest.h"
-#include "genivf.hpp"
+#include "types.hpp"
 
 #include <stdexcept>
 #include <vector>
@@ -32,4 +32,3 @@ TEST_CASE("Point: at() throws std::out_of_range for out-of-bounds index")
     // HACK: void cast to suppress unused-result warning
     CHECK_THROWS_AS((void)p.at(2), std::out_of_range);
 }
-
