@@ -56,9 +56,7 @@ IndexIVF::find_nearest_centroid(const Point& point) const
 }
 
 void
-IndexIVF::train(std::span<const Point> points,
-                size_t max_iter,
-                double epsilon)
+IndexIVF::train(std::span<const Point> points, size_t max_iter, double epsilon)
 {
     if (points.size() < d_num_cells) {
         throw std::invalid_argument(
@@ -68,19 +66,28 @@ IndexIVF::train(std::span<const Point> points,
     const size_t n = points.size();
     const size_t num_bits = d_dim * 8;
 
-    log::info("Training IndexIVF with {} cells, dim = {} bytes ({} bits) on {} points (max_iter = {}, epsilon = {:.6f})",
-              d_num_cells, d_dim, num_bits, n, max_iter, epsilon);
+    log::info("Training IndexIVF with {} cells, dim = {} bytes ({} bits) on {} "
+              "points (max_iter = {}, epsilon = {:.6f})",
+              d_num_cells,
+              d_dim,
+              num_bits,
+              n,
+              max_iter,
+              epsilon);
 
     // 1. Unpack binary training points into float vectors
-    log::info("Unpacking binary vectors into continuous floating-point space...");
+    log::info(
+      "Unpacking binary vectors into continuous floating-point space...");
     std::vector<float> float_points(n * num_bits);
     for (size_t i = 0; i < n; ++i) {
         if (points[i].values.size() != d_dim) {
             throw std::invalid_argument("IndexIVF::train: point dimension does "
                                         "not match index dimension");
         }
-        if (!binary_to_real(num_bits, points[i].values.data(), &float_points[i * num_bits])) {
-            throw std::runtime_error("IndexIVF::train: failed to unpack binary vector to floats");
+        if (!binary_to_real(
+              num_bits, points[i].values.data(), &float_points[i * num_bits])) {
+            throw std::runtime_error(
+              "IndexIVF::train: failed to unpack binary vector to floats");
         }
     }
 
@@ -97,7 +104,9 @@ IndexIVF::train(std::span<const Point> points,
 
     std::vector<float> float_centroids(d_num_cells * num_bits);
     for (size_t i = 0; i < d_num_cells; ++i) {
-        std::copy_n(&float_points[idx[i] * num_bits], num_bits, &float_centroids[i * num_bits]);
+        std::copy_n(&float_points[idx[i] * num_bits],
+                    num_bits,
+                    &float_centroids[i * num_bits]);
     }
 
     std::vector<std::vector<size_t>> assignments(d_num_cells);
@@ -127,7 +136,8 @@ IndexIVF::train(std::span<const Point> points,
             float min_dist = get_l2_sq(pt, &float_centroids[0]);
 
             for (size_t j = 1; j < d_num_cells; ++j) {
-                const float dist = get_l2_sq(pt, &float_centroids[j * num_bits]);
+                const float dist =
+                  get_l2_sq(pt, &float_centroids[j * num_bits]);
                 if (dist < min_dist) {
                     min_dist = dist;
                     nearest = j;
@@ -142,7 +152,10 @@ IndexIVF::train(std::span<const Point> points,
 
         for (size_t i = 0; i < d_num_cells; ++i) {
             if (assignments[i].empty()) {
-                log::debug("Iteration {}: Cell {} had 0 assignments; keeping old centroid", iter, i);
+                log::debug("Iteration {}: Cell {} had 0 assignments; keeping "
+                           "old centroid",
+                           iter,
+                           i);
                 continue;
             }
             active_clusters++;
@@ -176,14 +189,20 @@ IndexIVF::train(std::span<const Point> points,
             }
 
             // Update
-            std::copy(new_centroid.begin(), new_centroid.end(), &float_centroids[i * num_bits]);
+            std::copy(new_centroid.begin(),
+                      new_centroid.end(),
+                      &float_centroids[i * num_bits]);
         }
 
-        log::info("Iteration {:2d}: Centroids updated ({} active cells). Movement converged = {}",
-                  iter, active_clusters, converged);
+        log::info("Iteration {:2d}: Centroids updated ({} active cells). "
+                  "Movement converged = {}",
+                  iter,
+                  active_clusters,
+                  converged);
 
         if (converged) {
-            log::info("K-Means training converged early at iteration {}.", iter + 1);
+            log::info("K-Means training converged early at iteration {}.",
+                      iter + 1);
             break;
         }
     }
@@ -193,8 +212,11 @@ IndexIVF::train(std::span<const Point> points,
     d_clusters.reserve(d_num_cells);
     for (size_t i = 0; i < d_num_cells; ++i) {
         std::vector<uint8_t> packed_centroid(d_dim, 0u);
-        if (!real_to_binary(num_bits, &float_centroids[i * num_bits], packed_centroid.data())) {
-            throw std::runtime_error("IndexIVF::train: failed to pack float centroid to binary");
+        if (!real_to_binary(num_bits,
+                            &float_centroids[i * num_bits],
+                            packed_centroid.data())) {
+            throw std::runtime_error(
+              "IndexIVF::train: failed to pack float centroid to binary");
         }
         d_clusters.emplace_back(i, Point(i, std::move(packed_centroid)));
     }
@@ -227,23 +249,25 @@ IndexIVF::add(std::span<const Point> points)
         const size_t cell = find_nearest_centroid(point);
         d_clusters[cell].point_indices.push_back(point.id);
 
-        // Contiguous layout: append values directly to flat_vectors of the cluster
+        // Contiguous layout: append values directly to flat_vectors of the
+        // cluster
         d_clusters[cell].flat_vectors.insert(
           d_clusters[cell].flat_vectors.end(),
           point.values.begin(),
-          point.values.end()
-        );
+          point.values.end());
 
         log::debug("Added point ID {} -> assigned to Cell {}", point.id, cell);
     }
     log::info("Successfully added {} points to the index.", points.size());
 }
 
-template <MetricType Metric>
+template<MetricType Metric>
 std::vector<SearchResult>
 IndexIVF::search_impl(const Point& query, size_t k, size_t nprobe) const
 {
-    log::debug("search_impl: running compile-time specialization for MetricType = {}", static_cast<int>(Metric));
+    log::debug(
+      "search_impl: running compile-time specialization for MetricType = {}",
+      static_cast<int>(Metric));
 
     std::vector<std::pair<double, size_t>> centroid_dists;
     centroid_dists.reserve(d_clusters.size());
@@ -251,9 +275,8 @@ IndexIVF::search_impl(const Point& query, size_t k, size_t nprobe) const
     for (size_t i = 0; i < d_clusters.size(); ++i) {
         double dist = 0.0;
         if constexpr (Metric == MetricType::L2) {
-            dist = distance_l2_sq(query.values.data(),
-                                  d_clusters[i].centroid.values.data(),
-                                  d_dim);
+            dist = distance_l2_sq(
+              query.values.data(), d_clusters[i].centroid.values.data(), d_dim);
         } else if constexpr (Metric == MetricType::HAMMING) {
             dist = static_cast<double>(
               distance_hamming(query.values.data(),
@@ -279,8 +302,13 @@ IndexIVF::search_impl(const Point& query, size_t k, size_t nprobe) const
         const size_t cell_idx = centroid_dists[p].second;
         const auto& cluster = d_clusters[cell_idx];
 
-        log::debug("Probing cell rank {}: Cell ID = {} (centroid ID = {}, dist = {:.4f}), containing {} vectors",
-                   p, cell_idx, cluster.centroid.id, centroid_dists[p].first, cluster.point_indices.size());
+        log::debug("Probing cell rank {}: Cell ID = {} (centroid ID = {}, dist "
+                   "= {:.4f}), containing {} vectors",
+                   p,
+                   cell_idx,
+                   cluster.centroid.id,
+                   centroid_dists[p].first,
+                   cluster.point_indices.size());
 
         for (size_t i = 0; i < cluster.point_indices.size(); ++i) {
             const size_t point_id = cluster.point_indices[i];
@@ -290,11 +318,11 @@ IndexIVF::search_impl(const Point& query, size_t k, size_t nprobe) const
             if constexpr (Metric == MetricType::L2) {
                 dist = distance_l2(query.values.data(), vector_data, d_dim);
             } else if constexpr (Metric == MetricType::HAMMING) {
-                dist = static_cast<double>(distance_hamming(
-                  query.values.data(), vector_data, d_dim));
+                dist = static_cast<double>(
+                  distance_hamming(query.values.data(), vector_data, d_dim));
             } else if constexpr (Metric == MetricType::JACCARD) {
-                dist = static_cast<double>(distance_jaccard(
-                  query.values.data(), vector_data, d_dim));
+                dist = static_cast<double>(
+                  distance_jaccard(query.values.data(), vector_data, d_dim));
             }
             candidates.push_back({ point_id, dist });
         }
@@ -308,7 +336,9 @@ IndexIVF::search_impl(const Point& query, size_t k, size_t nprobe) const
                       candidates.end());
     candidates.resize(result_count);
 
-    log::info("Search complete. Scanned {} candidates, returning top {}", total_scanned, result_count);
+    log::info("Search complete. Scanned {} candidates, returning top {}",
+              total_scanned,
+              result_count);
 
     return candidates;
 }
@@ -335,7 +365,10 @@ IndexIVF::search(const Point& query,
         return {};
     }
 
-    log::info("Executing Search query: k = {}, nprobe = {}, metric = {}", k, nprobe, static_cast<int>(metric));
+    log::info("Executing Search query: k = {}, nprobe = {}, metric = {}",
+              k,
+              nprobe,
+              static_cast<int>(metric));
 
     switch (metric) {
         case MetricType::L2:
