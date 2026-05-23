@@ -439,7 +439,7 @@ main()
     std::string ref_seq = "data/dengue_ref_sequences.fasta";
     std::string left_seq = "data/left.fq";
 
-    auto is_ivf_index_built = build_ivf_index("main.givf", ref_seq, 256);
+    auto is_ivf_index_built = build_ivf_index("main.givf", ref_seq, 128);
     if (!is_ivf_index_built) {
         std::println("Failed to build IVF index.");
         return 1;
@@ -508,6 +508,8 @@ main()
     auto flat_index = io::load_flat_index("main_flat.givf");
 
     // Measure IVF accuracy using the flat index as ground truth
-    std::vector<size_t> nprobes = { 1, 2, 4, 8, 16, 32, 64, 128, 256 };
+    std::vector<size_t> nprobes = {
+        1, 2, 4, 8, 16, 32,
+    };
     measure_ivf_accuracy(loaded_index, flat_index, left_seq, k, nprobes);
 }
