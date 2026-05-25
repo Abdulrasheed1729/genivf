@@ -8,6 +8,10 @@
     "command": "meson compile -C build",
   },
   {
+    "label": "Test",
+    "command": "meson test -C build",
+  },
+  {
     "label": "Run",
     "command": "build/genivf",
   },
