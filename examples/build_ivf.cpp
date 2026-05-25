@@ -1,4 +1,4 @@
-#include "genivf.hpp"
+#include "ivf.hpp"
 #include "logger.hpp"
 
 using namespace genivf;

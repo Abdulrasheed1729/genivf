@@ -1,5 +1,5 @@
 #include "flat.hpp"
-#include "genivf.hpp"
+#include "ivf.hpp"
 #include "logger.hpp"
 #include "types.hpp"
 

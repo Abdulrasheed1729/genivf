@@ -6,7 +6,7 @@
 #include <stdexcept>
 
 #include "flat.hpp"
-#include "genivf.hpp"
+#include "ivf.hpp"
 
 namespace genivf::io {
 
