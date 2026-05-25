@@ -48,8 +48,7 @@ struct IndexFlat
 
     template<MetricType Metric>
     [[nodiscard]] std::vector<SearchResult> search_impl(const Point& query,
-                                                        size_t k,
-                                                        size_t nprobe) const;
+                                                        size_t k) const;
 };
 
 } // namespace genivf

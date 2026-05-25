@@ -1,4 +1,5 @@
 #include "genivf.hpp"
+#include "logger.hpp"
 
 #include <algorithm>
 #include <cassert>

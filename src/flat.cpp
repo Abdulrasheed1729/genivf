@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "flat.hpp"
+#include "logger.hpp"
 #include "types.hpp"
 #include "utils.hpp"
 
@@ -43,7 +44,7 @@ IndexFlat::add(std::span<const Point> points)
 
 template<MetricType Metric>
 std::vector<SearchResult>
-IndexFlat::search_impl(const Point& query, size_t k, size_t /*nprobe*/) const
+IndexFlat::search_impl(const Point& query, size_t k) const
 {
     std::vector<SearchResult> candidates;
     candidates.reserve(d_ntotal);
@@ -98,11 +99,11 @@ IndexFlat::search(const Point& query,
 
     switch (metric) {
         case MetricType::L2:
-            return search_impl<MetricType::L2>(query, k, nprobe);
+            return search_impl<MetricType::L2>(query, k);
         case MetricType::HAMMING:
-            return search_impl<MetricType::HAMMING>(query, k, nprobe);
+            return search_impl<MetricType::HAMMING>(query, k);
         case MetricType::JACCARD:
-            return search_impl<MetricType::JACCARD>(query, k, nprobe);
+            return search_impl<MetricType::JACCARD>(query, k);
     }
     return {};
 }
