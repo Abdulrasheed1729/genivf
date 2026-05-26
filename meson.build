@@ -6,7 +6,7 @@ project(
     default_options: [
         'cpp_std=c++23',
         'warning_level=2', # -Wall -Wextra on GCC/Clang
-        'buildtype=release',
+        'buildtype=debug',
         'b_lto=true'
     ],
 )
@@ -17,7 +17,7 @@ lib_args = ['-Werror']
 
 genivf_lib = static_library(
     'genivf',
-    ['src/genivf.cpp', 'src/flat.cpp', 'src/seq.cpp', 'src/io.cpp'],
+    ['src/ivf.cpp', 'src/flat.cpp', 'src/seq.cpp', 'src/io.cpp', 'src/bsivf.cpp'],
     include_directories: inc,
     cpp_args: lib_args,
 )

@@ -101,7 +101,7 @@ IndexIVF::train(std::span<const Point> points, size_t max_iter, double epsilon)
     std::mt19937 rng(d_seed);
     std::vector<size_t> idx(n);
     std::iota(idx.begin(), idx.end(), 0);
-    std::shuffle(idx.begin(), idx.end(), rng);
+    std::ranges::shuffle(idx, rng);
 
     std::vector<float> float_centroids(d_num_cells * num_bits);
     for (size_t i = 0; i < d_num_cells; ++i) {
@@ -117,7 +117,7 @@ IndexIVF::train(std::span<const Point> points, size_t max_iter, double epsilon)
     auto get_l2_sq = [num_bits](const float* a, const float* b) noexcept {
         float sum = 0.0f;
         for (size_t d = 0; d < num_bits; ++d) {
-            float diff = a[d] - b[d];
+            const float diff = a[d] - b[d];
             sum += diff * diff;
         }
         return sum;
@@ -190,8 +190,7 @@ IndexIVF::train(std::span<const Point> points, size_t max_iter, double epsilon)
             }
 
             // Update
-            std::copy(new_centroid.begin(),
-                      new_centroid.end(),
+            std::ranges::copy(new_centroid,
                       &float_centroids[i * num_bits]);
         }
 
@@ -292,10 +291,8 @@ IndexIVF::search_impl(const Point& query, size_t k, size_t nprobe) const
         centroid_dists.emplace_back(dist, i);
     }
 
-    std::partial_sort(centroid_dists.begin(),
-                      centroid_dists.begin() +
-                        static_cast<std::ptrdiff_t>(nprobe),
-                      centroid_dists.end());
+    std::ranges::partial_sort(centroid_dists,centroid_dists.begin() +
+                        static_cast<std::ptrdiff_t>(nprobe));
 
     std::vector<SearchResult> candidates;
 

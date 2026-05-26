@@ -16,9 +16,9 @@ static double
 compute_recall(const std::string& fastq_file,
                const std::string& flat_index_file,
                const std::string& ivf_index_file,
-               size_t k,
-               size_t nprobe,
-               genivf::MetricType metric)
+               const size_t k,
+               const size_t nprobe,
+               const MetricType metric)
 {
     size_t total_expected = 0;
     size_t total_found = 0;
@@ -50,11 +50,11 @@ compute_recall(const std::string& fastq_file,
         for (const auto& r : approx) {
             approx_ids.push_back(r.id);
         }
-        std::sort(approx_ids.begin(), approx_ids.end());
+        std::ranges::sort(approx_ids);
 
         size_t found = 0;
         for (size_t id : gt_ids) {
-            if (std::binary_search(approx_ids.begin(), approx_ids.end(), id)) {
+            if (std::ranges::binary_search(approx_ids, id)) {
                 ++found;
             }
         }
