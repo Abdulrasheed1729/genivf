@@ -99,7 +99,7 @@ main()
     const std::string fasta_file = "data/dengue_ref_sequences.fasta";
     const std::string fastq_file = "data/left.fq";
     const std::string flat_index_file = "out.flat.givf";
-    size_t stride = 25;
+    size_t stride = 10;
     size_t k = 1;
     double recall = compute_recall(
       fasta_file, fastq_file, flat_index_file, stride, k, MetricType::HAMMING);

@@ -40,7 +40,8 @@ IndexBSIVF::find_nearest_centroid(const Point& query) const
     size_t best_distance = std::numeric_limits<size_t>::max();
 
     for (const auto& i : this->centroids) {
-        if (i > this->d_ntotal) break;
+        if (i > this->d_ntotal)
+            break;
         auto dist = distance_hamming(this->d_vectors[i], query);
         if (dist < best_distance) {
             best_distance = dist;
@@ -96,8 +97,8 @@ IndexBSIVF::search_impl(const Point& query) const
             return static_cast<double>(distance_hamming(a, b));
         } else if constexpr (Metric == MetricType::JACCARD) {
             return static_cast<double>(distance_jaccard(a, b));
-        }
-        else return 0.0;
+        } else
+            return 0.0;
     };
 
     auto [pos, _] = this->find_nearest_centroid(query);
@@ -109,6 +110,8 @@ IndexBSIVF::search_impl(const Point& query) const
 
     size_t s = this->stride;
 
+    // NOTE: okay there is a problem here, we are not sure if the distances are
+    // in asceding order.
     while (s > 1) {
         s /= 2;
 
@@ -124,7 +127,9 @@ IndexBSIVF::search_impl(const Point& query) const
         }
 
         if (pos + s < this->d_vectors.size()) {
-            if (const double dist = compute_dist(query, this->d_vectors[pos + s]);dist < best_distance) {
+            if (const double dist =
+                  compute_dist(query, this->d_vectors[pos + s]);
+                dist < best_distance) {
                 best_distance = dist;
                 candidate.distance = dist;
                 candidate.id = this->d_vectors[pos + s].id;
