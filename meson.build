@@ -17,7 +17,7 @@ lib_args = ['-Werror']
 
 genivf_lib = static_library(
     'genivf',
-    ['src/genivf.cpp', 'src/flat.cpp', 'src/seq.cpp'],
+    ['src/genivf.cpp', 'src/flat.cpp', 'src/seq.cpp', 'src/io.cpp'],
     include_directories: inc,
     cpp_args: lib_args,
 )

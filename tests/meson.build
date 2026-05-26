@@ -7,6 +7,8 @@ foreach tc : [
     ['genivf_test', 'genivf.test.cpp'],
     ['io_test', 'io.test.cpp'],
     ['seq_test', 'seq.test.cpp'],
+    ['flat_test', 'flat.test.cpp'],
+    ['utils_test', 'utils.test.cpp'],
 ]
     exe = executable(
         tc[0],

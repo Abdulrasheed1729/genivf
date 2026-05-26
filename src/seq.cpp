@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "../include/seq.hpp"
+#include "seq.hpp"
 
 namespace genivf::seq {
 

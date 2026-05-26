@@ -2,10 +2,16 @@
 
 #include <cstdint>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace genivf {
 
+struct WindowMetaData
+{
+    std::string sequence_name;
+    int start_pos = 0;
+};
 // Metric types for distance calculations.
 enum class MetricType
 {
