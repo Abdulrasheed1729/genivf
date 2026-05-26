@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <limits>
 #include <numeric>
 #include <random>
 #include <stdexcept>
@@ -22,17 +23,23 @@ validate_ivf_params(size_t num_cells, size_t dim)
     }
 }
 
-IndexIVF::IndexIVF(size_t num_cells, size_t dim, unsigned seed)
+IndexIVF::IndexIVF(size_t num_cells,
+                   size_t dim,
+                   unsigned seed,
+                   InitType init)
   : d_num_cells(num_cells)
   , d_dim(dim)
   , d_seed(seed)
+  , d_init_type(init)
 {
     validate_ivf_params(num_cells, dim);
+    log::info("IndexIVF constructed: init = {}",
+              static_cast<int>(d_init_type));
 }
 
-// Delegate to the three-argument constructor to avoid duplicating validation.
-IndexIVF::IndexIVF(size_t num_cells, size_t dim)
-  : IndexIVF(num_cells, dim, 42u)
+// Delegate to the four-argument constructor to avoid duplicating validation.
+IndexIVF::IndexIVF(size_t num_cells, size_t dim, InitType init)
+  : IndexIVF(num_cells, dim, 42u, init)
 {
 }
 
@@ -96,24 +103,7 @@ IndexIVF::train(std::span<const Point> points, size_t max_iter, double epsilon)
     d_clusters.clear();
     d_vectors.clear();
 
-    // 2. Initialise float centroids by randomly sampling k distinct points
-    log::info("Initializing centroids via random uniform sampling...");
-    std::mt19937 rng(d_seed);
-    std::vector<size_t> idx(n);
-    std::iota(idx.begin(), idx.end(), 0);
-    std::ranges::shuffle(idx, rng);
-
-    std::vector<float> float_centroids(d_num_cells * num_bits);
-    for (size_t i = 0; i < d_num_cells; ++i) {
-        std::copy_n(&float_points[idx[i] * num_bits],
-                    num_bits,
-                    &float_centroids[i * num_bits]);
-    }
-
-    std::vector<std::vector<size_t>> assignments(d_num_cells);
-    const double epsilon_sq = epsilon * epsilon;
-
-    // Squared L2 calculation lambda
+    // Squared L2 calculation lambda (used by both initialisation and k-means)
     auto get_l2_sq = [num_bits](const float* a, const float* b) noexcept {
         float sum = 0.0f;
         for (size_t d = 0; d < num_bits; ++d) {
@@ -123,7 +113,88 @@ IndexIVF::train(std::span<const Point> points, size_t max_iter, double epsilon)
         return sum;
     };
 
+    // 2. Initialise float centroids (RANDOM or K-MEANS++)
+    std::vector<float> float_centroids(d_num_cells * num_bits);
+    std::mt19937 rng(d_seed);
+
+    if (d_init_type == InitType::RANDOM) {
+        log::info("Initializing centroids via random uniform sampling...");
+        std::vector<size_t> idx(n);
+        std::iota(idx.begin(), idx.end(), 0);
+        std::ranges::shuffle(idx, rng);
+        for (size_t i = 0; i < d_num_cells; ++i) {
+            std::copy_n(&float_points[idx[i] * num_bits],
+                        num_bits,
+                        &float_centroids[i * num_bits]);
+        }
+    } else {
+        log::info("Initializing centroids via k-means++ ...");
+        std::vector<double> min_dists_sq(n,
+                                         std::numeric_limits<double>::max());
+        std::vector<bool> used(n, false);
+
+        std::uniform_int_distribution<size_t> pick(0, n - 1);
+        size_t first = pick(rng);
+        used[first] = true;
+        std::copy_n(&float_points[first * num_bits],
+                    num_bits,
+                    &float_centroids[0]);
+
+        for (size_t c = 1; c < d_num_cells; ++c) {
+            double total = 0.0;
+
+            const float* last_ctr = &float_centroids[(c - 1) * num_bits];
+            for (size_t i = 0; i < n; ++i) {
+                if (used[i])
+                    continue;
+                double d = static_cast<double>(
+                  get_l2_sq(&float_points[i * num_bits], last_ctr));
+                if (d < min_dists_sq[i]) {
+                    min_dists_sq[i] = d;
+                }
+                total += min_dists_sq[i];
+            }
+
+            if (total == 0.0) {
+                std::vector<size_t> unused;
+                for (size_t i = 0; i < n; ++i) {
+                    if (!used[i])
+                        unused.push_back(i);
+                }
+                std::ranges::shuffle(unused, rng);
+                for (size_t r = c; r < d_num_cells && (r - c) < unused.size();
+                     ++r) {
+                    std::copy_n(&float_points[unused[r - c] * num_bits],
+                                num_bits,
+                                &float_centroids[r * num_bits]);
+                }
+                break;
+            }
+
+            std::uniform_real_distribution<double> draw(0.0, total);
+            double threshold = draw(rng);
+            double cumulative = 0.0;
+            size_t next = 0;
+            for (size_t i = 0; i < n; ++i) {
+                if (used[i])
+                    continue;
+                cumulative += min_dists_sq[i];
+                if (cumulative >= threshold) {
+                    next = i;
+                    break;
+                }
+            }
+
+            used[next] = true;
+            std::copy_n(&float_points[next * num_bits],
+                        num_bits,
+                        &float_centroids[c * num_bits]);
+        }
+    }
+
     // 3. K-Means Main Loop
+    std::vector<std::vector<size_t>> assignments(d_num_cells);
+    const double epsilon_sq = epsilon * epsilon;
     log::info("Starting K-means iterations...");
     for (size_t iter = 0; iter < max_iter; ++iter) {
         for (auto& a : assignments) {

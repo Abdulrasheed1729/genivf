@@ -55,10 +55,15 @@ distance_l2_sq(const Point& a, const Point& b)
 // seed:      RNG seed for centroid initialisation (fix for reproducibility).
 struct IndexIVF
 {
-    explicit IndexIVF(size_t num_cells, size_t dim, unsigned seed);
+    explicit IndexIVF(size_t num_cells,
+                      size_t dim,
+                      unsigned seed,
+                      InitType init = InitType::KMEANS_PLUS_PLUS);
 
     // Constructs an IndexIVF with a default RNG seed of 42.
-    explicit IndexIVF(size_t num_cells, size_t dim);
+    explicit IndexIVF(size_t num_cells,
+                      size_t dim,
+                      InitType init = InitType::KMEANS_PLUS_PLUS);
 
     void train(std::span<const Point> points,
                size_t max_iter = 100,
@@ -103,6 +108,7 @@ struct IndexIVF
     size_t d_num_cells;
     size_t d_dim; // number of bytes per vector (bit-width / 8)
     unsigned d_seed = 42;
+    InitType d_init_type = InitType::RANDOM;
 
     std::vector<Cluster> d_clusters;
     std::unordered_map<size_t, Point> d_vectors;

@@ -12,6 +12,13 @@ struct WindowMetaData
     std::string sequence_name;
     int start_pos = 0;
 };
+// Initialisation strategies for k-means centroids.
+enum class InitType
+{
+    RANDOM,        // Uniform random sampling from training points
+    KMEANS_PLUS_PLUS // k-means++ seeding (Arthur & Vassilvitskii 2007)
+};
+
 // Metric types for distance calculations.
 enum class MetricType
 {
