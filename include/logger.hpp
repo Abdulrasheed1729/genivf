@@ -11,7 +11,7 @@ enum class Level
 {
     NONE = 0,
     INFO = 1,
-    DEBUG = 2
+    LOG_DEBUG = 2
 };
 
 inline Level g_level = Level::INFO;
@@ -36,7 +36,7 @@ template<typename... Args>
 inline void
 debug(std::format_string<Args...> fmt, Args&&... args)
 {
-    if (g_level >= Level::DEBUG) {
+    if (g_level >= Level::LOG_DEBUG) {
         std::print(std::clog, "[GENIVF DEBUG] ");
         std::println(std::clog, fmt, std::forward<Args>(args)...);
     }
