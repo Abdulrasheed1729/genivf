@@ -25,8 +25,8 @@ void
 IndexBSIVF::construct_centroids()
 {
     log::info("Constructing centroids with stride {} ...", this->stride);
-    for (size_t i = 0; i + this->stride < this->d_ntotal; ++i) {
-        this->centroids.push_back(i * this->stride);
+    for (size_t i = 0; i < this->d_ntotal; i += stride) {
+        this->centroids.push_back(i);
     }
 
     log::info("Finished constructing {} centroids", centroids.size());

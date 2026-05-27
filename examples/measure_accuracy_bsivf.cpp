@@ -6,6 +6,8 @@
 #include "utils.hpp"
 
 #include <array>
+#include <cstdint>
+#include <fstream>
 #include <print>
 #include <vector>
 
@@ -19,6 +21,7 @@ static double
 compute_recall(const std::string& fasta_file,
                const std::string& fastq_file,
                const std::string& flat_index_file,
+               const std::string& eval_file_path,
                size_t stride,
                size_t k,
                genivf::MetricType metric)
@@ -65,18 +68,31 @@ compute_recall(const std::string& fasta_file,
         query_points.emplace_back(i, query_vectors[i]);
     }
 
+    std::ofstream eval_file(eval_file_path);
+
+    eval_file << "query_idx" << "," << "result_pos" << "," << "real_pos" << ","
+              << "offset" << ","
+              << "result_dist" << "," << "real_dist" << ","
+              << "marg_dist"
+                 "\n";
+
     for (const auto& query : query_points) {
         auto ground_truth = flat.search(query, k, 1, metric);
         auto approx = bsivf.search(query, metric);
 
-        std::vector<size_t> gt_ids;
-        gt_ids.reserve(ground_truth.size());
+        std::vector<std::pair<size_t, double>> gt_ids_dist;
+        gt_ids_dist.reserve(ground_truth.size());
         for (const auto& r : ground_truth) {
-            gt_ids.push_back(r.id);
+            gt_ids_dist.push_back({ r.id, r.distance });
         }
 
         bool found = false;
-        for (size_t id : gt_ids) {
+        for (const auto& [id, dist] : gt_ids_dist) {
+            eval_file << query.id << "," << approx.id << "," << id << ","
+                      << static_cast<int64_t>(approx.id) -
+                           static_cast<int64_t>(id)
+                      << "," << approx.distance << "," << dist << ","
+                      << approx.distance - dist << "\n";
             if (approx.id == id) {
                 found = true;
                 break;
@@ -99,10 +115,16 @@ main()
     const std::string fasta_file = "data/dengue_ref_sequences.fasta";
     const std::string fastq_file = "data/left.fq";
     const std::string flat_index_file = "out.flat.givf";
-    size_t stride = 10;
+    const std::string bsivf_eval_file = "bsivf.eval.csv";
+    size_t stride = 25;
     size_t k = 1;
-    double recall = compute_recall(
-      fasta_file, fastq_file, flat_index_file, stride, k, MetricType::HAMMING);
+    double recall = compute_recall(fasta_file,
+                                   fastq_file,
+                                   flat_index_file,
+                                   bsivf_eval_file,
+                                   stride,
+                                   k,
+                                   MetricType::HAMMING);
 
     std::print("  {:.4f}", recall);
 
