@@ -1,6 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
-#include "genivf.hpp"
 #include "doctest.h"
+#include "ivf.hpp"
 
 #include <stdexcept>
 #include <vector>

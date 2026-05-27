@@ -1,12 +1,10 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
-#include "doctest.h"
 #include "utils.hpp"
+#include "doctest.h"
 
 #include <array>
-#include <cmath>
 #include <filesystem>
 #include <fstream>
-#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -43,7 +41,8 @@ TEST_CASE("distance_hamming: 64-bit word alignment edge cases")
 {
     uint8_t a[9] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00 };
     uint8_t b[9] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF };
-    // First 8 bytes: all bits differ → 64. Last byte: 8 bits differ → 8. Total = 72.
+    // First 8 bytes: all bits differ → 64. Last byte: 8 bits differ → 8. Total
+    // = 72.
     CHECK_EQ(genivf::distance_hamming(a, b, 9), 72u);
 }
 
@@ -112,7 +111,8 @@ TEST_CASE("compute_binary_kmer_vector: exact k-mer length sets one bit")
     CHECK_EQ(out[1], 1u);
     // No other bits should be set
     for (size_t i = 0; i < DIM; ++i) {
-        if (i != 1) CHECK_EQ(out[i], 0u);
+        if (i != 1)
+            CHECK_EQ(out[i], 0u);
     }
 }
 
@@ -170,7 +170,8 @@ TEST_CASE("pack_kmer_vector_endian: round-trip consistency")
 
 TEST_CASE("build_metadata_file and build_metadata_map_from_tsv round-trip")
 {
-    std::string tsv_path = std::filesystem::temp_directory_path() / "test_meta.tsv";
+    std::string tsv_path =
+      std::filesystem::temp_directory_path() / "test_meta.tsv";
 
     std::vector<genivf::WindowMetaData> windows;
     windows.push_back({ "seq1", 0 });

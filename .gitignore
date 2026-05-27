@@ -3,5 +3,6 @@ scratch.md
 scratch.org
 *.givf
 *.tsv
+*.csv
 code_review.md
 walkthrough.md
