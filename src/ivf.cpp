@@ -23,18 +23,14 @@ validate_ivf_params(size_t num_cells, size_t dim)
     }
 }
 
-IndexIVF::IndexIVF(size_t num_cells,
-                   size_t dim,
-                   unsigned seed,
-                   InitType init)
+IndexIVF::IndexIVF(size_t num_cells, size_t dim, unsigned seed, InitType init)
   : d_num_cells(num_cells)
   , d_dim(dim)
   , d_seed(seed)
   , d_init_type(init)
 {
     validate_ivf_params(num_cells, dim);
-    log::info("IndexIVF constructed: init = {}",
-              static_cast<int>(d_init_type));
+    log::info("IndexIVF constructed: init = {}", static_cast<int>(d_init_type));
 }
 
 // Delegate to the four-argument constructor to avoid duplicating validation.
@@ -129,16 +125,14 @@ IndexIVF::train(std::span<const Point> points, size_t max_iter, double epsilon)
         }
     } else {
         log::info("Initializing centroids via k-means++ ...");
-        std::vector<double> min_dists_sq(n,
-                                         std::numeric_limits<double>::max());
+        std::vector<double> min_dists_sq(n, std::numeric_limits<double>::max());
         std::vector<bool> used(n, false);
 
         std::uniform_int_distribution<size_t> pick(0, n - 1);
         size_t first = pick(rng);
         used[first] = true;
-        std::copy_n(&float_points[first * num_bits],
-                    num_bits,
-                    &float_centroids[0]);
+        std::copy_n(
+          &float_points[first * num_bits], num_bits, &float_centroids[0]);
 
         for (size_t c = 1; c < d_num_cells; ++c) {
             double total = 0.0;
@@ -261,8 +255,7 @@ IndexIVF::train(std::span<const Point> points, size_t max_iter, double epsilon)
             }
 
             // Update
-            std::ranges::copy(new_centroid,
-                      &float_centroids[i * num_bits]);
+            std::ranges::copy(new_centroid, &float_centroids[i * num_bits]);
         }
 
         log::info("Iteration {:2d}: Centroids updated ({} active cells). "
@@ -362,8 +355,9 @@ IndexIVF::search_impl(const Point& query, size_t k, size_t nprobe) const
         centroid_dists.emplace_back(dist, i);
     }
 
-    std::ranges::partial_sort(centroid_dists,centroid_dists.begin() +
-                        static_cast<std::ptrdiff_t>(nprobe));
+    std::ranges::partial_sort(centroid_dists,
+                              centroid_dists.begin() +
+                                static_cast<std::ptrdiff_t>(nprobe));
 
     std::vector<SearchResult> candidates;
 

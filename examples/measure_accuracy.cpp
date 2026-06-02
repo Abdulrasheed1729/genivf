@@ -36,7 +36,7 @@ compute_recall(const std::string& fastq_file,
     }
 
     for (const auto& query : query_points) {
-        auto ground_truth = flat.search(query, k, 1, metric);
+        auto ground_truth = flat.search(query, k, metric);
         auto approx = ivf.search(query, k, nprobe, metric);
 
         std::vector<size_t> gt_ids;
@@ -76,7 +76,7 @@ main()
     const std::string flat_index_file = "out.flat.givf";
     const std::string ivf_index_file = "out.ivf.givf";
     double recall = compute_recall(
-      fastq_file, flat_index_file, ivf_index_file, 1, 16, MetricType::HAMMING);
+      fastq_file, flat_index_file, ivf_index_file, 16, 16, MetricType::HAMMING);
 
     std::print("  {:.4f}", recall);
 

@@ -1,3 +1,4 @@
+#include <cassert>
 #include <cstddef>
 #include <limits>
 #include <span>
@@ -11,10 +12,9 @@
 
 namespace genivf {
 
-IndexBSIVF::IndexBSIVF(size_t dim, size_t ntotal, const size_t stride)
+IndexBSIVF::IndexBSIVF(size_t dim, size_t ntotal)
   : d_dim(dim)
   , d_ntotal(ntotal)
-  , stride(stride)
 {
     d_vectors.reserve(ntotal);
     log::info(
@@ -22,9 +22,9 @@ IndexBSIVF::IndexBSIVF(size_t dim, size_t ntotal, const size_t stride)
 }
 
 void
-IndexBSIVF::construct_centroids()
+IndexBSIVF::construct_centroids(size_t stride)
 {
-    log::info("Constructing centroids with stride {} ...", this->stride);
+    log::info("Constructing centroids with stride {} ...", stride);
     for (size_t i = 0; i < this->d_ntotal; i += stride) {
         this->centroids.push_back(i);
     }
@@ -88,8 +88,11 @@ IndexBSIVF::add(std::span<const Point> points)
 
 template<MetricType Metric>
 SearchResult
-IndexBSIVF::search_impl(const Point& query) const
+IndexBSIVF::search_impl(const Point& query,
+                        const size_t stride,
+                        const size_t min_stride) const
 {
+    assert(min_stride > 0 && stride >= min_stride);
     auto compute_dist = [&](const Point& a, const Point& b) -> double {
         if constexpr (Metric == MetricType::L2) {
             return distance_l2(a, b);
@@ -108,11 +111,9 @@ IndexBSIVF::search_impl(const Point& query) const
     candidate.distance = best_distance;
     candidate.id = this->d_vectors[pos].id;
 
-    size_t s = this->stride;
+    size_t s = stride;
 
-    // NOTE: okay there is a problem here, we are not sure if the distances are
-    // in asceding order.
-    while (s > 1) {
+    while (s > min_stride) {
         s /= 2;
 
         if (pos >= s) {
@@ -138,11 +139,26 @@ IndexBSIVF::search_impl(const Point& query) const
         }
     }
 
+    // NOTE:  Linear scan the final neighborhood within min_stride radius
+    size_t left = (pos >= min_stride) ? pos - min_stride : 0;
+    size_t right = std::min(pos + min_stride + 1, this->d_vectors.size());
+    for (size_t i = left; i < right; ++i) {
+        double dist = compute_dist(query, this->d_vectors[i]);
+        if (dist < best_distance) {
+            best_distance = dist;
+            candidate.distance = dist;
+            candidate.id = this->d_vectors[i].id;
+        }
+    }
+
     return candidate;
 }
 
 SearchResult
-IndexBSIVF::search(const Point& query, MetricType metric) const
+IndexBSIVF::search(const Point& query,
+                   size_t stride,
+                   size_t min_stride,
+                   MetricType metric) const
 {
     log::info("Executing Search query: stride = {}, metric = {}",
               stride,
@@ -159,11 +175,11 @@ IndexBSIVF::search(const Point& query, MetricType metric) const
 
     switch (metric) {
         case MetricType::L2:
-            return search_impl<MetricType::L2>(query);
+            return search_impl<MetricType::L2>(query, stride, min_stride);
         case MetricType::HAMMING:
-            return search_impl<MetricType::HAMMING>(query);
+            return search_impl<MetricType::HAMMING>(query, stride, min_stride);
         case MetricType::JACCARD:
-            return search_impl<MetricType::JACCARD>(query);
+            return search_impl<MetricType::JACCARD>(query, stride, min_stride);
     }
     return {};
 }

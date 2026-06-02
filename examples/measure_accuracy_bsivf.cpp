@@ -23,6 +23,7 @@ compute_recall(const std::string& fasta_file,
                const std::string& flat_index_file,
                const std::string& eval_file_path,
                size_t stride,
+               size_t min_stride,
                size_t k,
                genivf::MetricType metric)
 {
@@ -51,9 +52,9 @@ compute_recall(const std::string& fasta_file,
         data_points.emplace_back(i, std::move(v));
     }
 
-    IndexBSIVF bsivf(data_points[0].values.size(), data_points.size(), stride);
+    IndexBSIVF bsivf(data_points[0].values.size(), data_points.size());
 
-    bsivf.construct_centroids();
+    bsivf.construct_centroids(stride);
 
     bsivf.add(data_points);
 
@@ -77,8 +78,8 @@ compute_recall(const std::string& fasta_file,
                  "\n";
 
     for (const auto& query : query_points) {
-        auto ground_truth = flat.search(query, k, 1, metric);
-        auto approx = bsivf.search(query, metric);
+        auto ground_truth = flat.search(query, k, metric);
+        auto approx = bsivf.search(query, stride, min_stride, metric);
 
         std::vector<std::pair<size_t, double>> gt_ids_dist;
         gt_ids_dist.reserve(ground_truth.size());
@@ -115,18 +116,56 @@ main()
     const std::string fasta_file = "data/dengue_ref_sequences.fasta";
     const std::string fastq_file = "data/left.fq";
     const std::string flat_index_file = "out.flat.givf";
-    const std::string bsivf_eval_file = "bsivf.eval.csv";
-    size_t stride = 25;
-    size_t k = 1;
-    double recall = compute_recall(fasta_file,
-                                   fastq_file,
-                                   flat_index_file,
-                                   bsivf_eval_file,
-                                   stride,
-                                   k,
-                                   MetricType::HAMMING);
+    // size_t k = 1;
 
-    std::print("  {:.4f}", recall);
+    const std::array<size_t, 4> strides = { 10, 25, 50, 100 };
+    const std::array<size_t, 5> min_strides = { 1, 2, 4, 8, 16 };
+
+    const std::string summary_file = "bsivf_summary.csv";
+    std::ofstream summary(summary_file);
+    summary << "stride,min_stride,recall\n";
+
+    std::print("{:>6} {:>10} {:>8}\n", "stride", "min_stride", "recall");
+
+    for (auto stride : strides) {
+        for (auto min_stride : min_strides) {
+            if (min_stride >= stride)
+                continue;
+
+            std::string eval_file =
+              std::format("bsivf_s{}_ms{}.eval.csv", stride, min_stride);
+
+            double recall = compute_recall(fasta_file,
+                                           fastq_file,
+                                           flat_index_file,
+                                           eval_file,
+                                           stride,
+                                           min_stride,
+                                           stride, // put k = stride / 2
+                                           MetricType::HAMMING);
+
+            summary << stride << "," << min_stride << "," << recall << "\n";
+            std::print("{:>6} {:>10} {:>7.4f}\n", stride, min_stride, recall);
+        }
+    }
+    std::print("\nSummary written to {}\n", summary_file);
+    // size_t stride = 1;
+    // size_t min_stride = 1;
+    // std::string eval_file =
+    //   std::format("bsivf_s{}_ms{}.eval.csv", stride, min_stride);
+
+    // double recall = compute_recall(fasta_file,
+    //                                fastq_file,
+    //                                flat_index_file,
+    //                                eval_file,
+    //                                stride,
+    //                                min_stride,
+    //                                1, // put k = stride / 2
+    //                                MetricType::HAMMING);
+
+    // summary << stride << "," << min_stride << "," << recall << "\n";
+    // std::print("{:>6} {:>10} {:>7.4f}\n", stride, min_stride, recall);
+    // std::print("\nSummary written to {}\n", summary_file);
 
     return 0;
 }

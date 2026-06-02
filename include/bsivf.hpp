@@ -22,7 +22,7 @@ struct IndexBSIVF;
 struct IndexBSIVF
 {
 
-    IndexBSIVF(size_t dim, size_t ntotal, size_t stride);
+    IndexBSIVF(size_t dim, size_t ntotal);
 
     void add(std::span<const Point> points);
 
@@ -31,10 +31,12 @@ struct IndexBSIVF
 
     bool is_trained() const;
 
-    void construct_centroids();
+    void construct_centroids(size_t stride);
 
     [[nodiscard]] SearchResult search(
       const Point& query,
+      size_t stride = 25,
+      size_t min_stride = 1,
       MetricType metric = MetricType::HAMMING) const;
 
     // friend void io::save_flat_index(const IndexBSIVF&,
@@ -44,13 +46,14 @@ struct IndexBSIVF
   private:
     size_t d_dim;
     size_t d_ntotal;
-    size_t stride;
     std::vector<Point> d_vectors;
     std::unordered_set<size_t> d_ids;
     std::vector<size_t> centroids;
 
     template<MetricType Metric>
-    [[nodiscard]] SearchResult search_impl(const Point& query) const;
+    [[nodiscard]] SearchResult search_impl(const Point& query,
+                                           size_t stride = 25,
+                                           size_t min_stride = 1) const;
 };
 
 } // namespace genivf
