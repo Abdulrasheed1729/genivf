@@ -79,14 +79,10 @@ IndexFlat::search_impl(const Point& query, size_t k) const
 }
 
 std::vector<SearchResult>
-IndexFlat::search(const Point& query,
-                  size_t k,
-                  size_t nprobe,
-                  MetricType metric) const
+IndexFlat::search(const Point& query, size_t k, MetricType metric) const
 {
-    log::info("Executing Search query: k = {}, nprobe = {}, metric = {}",
+    log::info("Executing Search query: k = {}, metric = {}",
               k,
-              nprobe,
               static_cast<int>(metric));
 
     if (query.values.size() != d_dim) {

@@ -33,12 +33,12 @@ struct IndexFlat
     [[nodiscard]] std::vector<SearchResult> search(
       const Point& query,
       size_t k,
-      size_t nprobe = 1,
       MetricType metric = MetricType::HAMMING) const;
 
     // IO functions need direct access to private members to serialise and
     // reconstruct the index without exposing them through the public API.
-    friend void io::save_flat_index(const IndexFlat&, const std::filesystem::path&);
+    friend void io::save_flat_index(const IndexFlat&,
+                                    const std::filesystem::path&);
     friend IndexFlat io::load_flat_index(const std::filesystem::path&);
 
   private:
