@@ -71,32 +71,21 @@ compute_recall(const std::string& fasta_file,
 
     std::ofstream eval_file(eval_file_path);
 
-    eval_file << "query_idx" << "," << "result_pos" << "," << "real_pos" << ","
-              << "offset" << ","
-              << "result_dist" << "," << "real_dist" << ","
-              << "marg_dist"
-                 "\n";
+    eval_file << "query_id,approx_id,approx_dist,rank,gt_id,gt_dist,margin\n";
 
     for (const auto& query : query_points) {
         auto ground_truth = flat.search(query, k, metric);
         auto approx = bsivf.search(query, stride, min_stride, metric);
 
-        std::vector<std::pair<size_t, double>> gt_ids_dist;
-        gt_ids_dist.reserve(ground_truth.size());
-        for (const auto& r : ground_truth) {
-            gt_ids_dist.push_back({ r.id, r.distance });
-        }
-
         bool found = false;
-        for (const auto& [id, dist] : gt_ids_dist) {
-            eval_file << query.id << "," << approx.id << "," << id << ","
-                      << static_cast<int64_t>(approx.id) -
-                           static_cast<int64_t>(id)
-                      << "," << approx.distance << "," << dist << ","
-                      << approx.distance - dist << "\n";
-            if (approx.id == id) {
+        for (size_t rank = 0; rank < ground_truth.size(); ++rank) {
+            const auto& gt = ground_truth[rank];
+            double margin = approx.distance - gt.distance;
+            eval_file << query.id << "," << approx.id << "," << approx.distance
+                      << "," << rank << "," << gt.id << "," << gt.distance
+                      << "," << margin << "\n";
+            if (approx.id == gt.id) {
                 found = true;
-                break;
             }
         }
 
@@ -116,7 +105,7 @@ main()
     const std::string fasta_file = "data/dengue_ref_sequences.fasta";
     const std::string fastq_file = "data/left.fq";
     const std::string flat_index_file = "out.flat.givf";
-    // size_t k = 1;
+    const size_t k = 1;
 
     const std::array<size_t, 4> strides = { 10, 25, 50, 100 };
     const std::array<size_t, 5> min_strides = { 1, 2, 4, 8, 16 };
@@ -141,7 +130,7 @@ main()
                                            eval_file,
                                            stride,
                                            min_stride,
-                                           stride, // put k = stride / 2
+                                           k,
                                            MetricType::HAMMING);
 
             summary << stride << "," << min_stride << "," << recall << "\n";
@@ -149,23 +138,6 @@ main()
         }
     }
     std::print("\nSummary written to {}\n", summary_file);
-    // size_t stride = 1;
-    // size_t min_stride = 1;
-    // std::string eval_file =
-    //   std::format("bsivf_s{}_ms{}.eval.csv", stride, min_stride);
-
-    // double recall = compute_recall(fasta_file,
-    //                                fastq_file,
-    //                                flat_index_file,
-    //                                eval_file,
-    //                                stride,
-    //                                min_stride,
-    //                                1, // put k = stride / 2
-    //                                MetricType::HAMMING);
-
-    // summary << stride << "," << min_stride << "," << recall << "\n";
-    // std::print("{:>6} {:>10} {:>7.4f}\n", stride, min_stride, recall);
-    // std::print("\nSummary written to {}\n", summary_file);
 
     return 0;
 }
