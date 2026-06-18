@@ -6,3 +6,6 @@ scratch.org
 *.csv
 code_review.md
 walkthrough.md
+trace.typ
+trace_output/
+scripts/

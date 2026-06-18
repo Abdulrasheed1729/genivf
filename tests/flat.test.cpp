@@ -19,7 +19,7 @@ TEST_CASE("IndexFlat: basic add and search")
     index.add(points);
 
     genivf::Point query(0, { 0x00 });
-    auto results = index.search(query, 2, 1, genivf::MetricType::HAMMING);
+    auto results = index.search(query, 2, genivf::MetricType::HAMMING);
 
     REQUIRE_EQ(results.size(), 2u);
     CHECK_EQ(results[0].id, 1u);
@@ -64,7 +64,7 @@ TEST_CASE("IndexFlat: results ordered by ascending distance")
     index.add(points);
 
     genivf::Point query(0, { 0x00 });
-    auto results = index.search(query, 4, 1, genivf::MetricType::HAMMING);
+    auto results = index.search(query, 4, genivf::MetricType::HAMMING);
     for (size_t i = 1; i < results.size(); ++i) {
         CHECK_LE(results[i - 1].distance, results[i].distance);
     }
@@ -81,7 +81,7 @@ TEST_CASE("IndexFlat: L2 distance search")
     index.add(points);
 
     genivf::Point query(0, { 0x01 });
-    auto results = index.search(query, 3, 1, genivf::MetricType::L2);
+    auto results = index.search(query, 3, genivf::MetricType::L2);
     REQUIRE_EQ(results.size(), 3u);
     CHECK_EQ(results[0].id, 1u);
     CHECK_EQ(results[0].distance, 0.0);
@@ -97,7 +97,7 @@ TEST_CASE("IndexFlat: Jaccard distance search")
     index.add(points);
 
     genivf::Point query(0, { 0xFF });
-    auto results = index.search(query, 2, 1, genivf::MetricType::JACCARD);
+    auto results = index.search(query, 2, genivf::MetricType::JACCARD);
     REQUIRE_EQ(results.size(), 2u);
     CHECK_EQ(results[0].id, 1u);
     CHECK_EQ(results[0].distance, 0.0);
@@ -122,8 +122,8 @@ TEST_CASE("IndexFlat: save/load round-trip")
     auto loaded = genivf::io::load_flat_index(tmp);
 
     genivf::Point query(0, { 0x00 });
-    auto before = original.search(query, 4, 1, genivf::MetricType::HAMMING);
-    auto after = loaded.search(query, 4, 1, genivf::MetricType::HAMMING);
+    auto before = original.search(query, 4, genivf::MetricType::HAMMING);
+    auto after = loaded.search(query, 4, genivf::MetricType::HAMMING);
 
     REQUIRE_EQ(before.size(), after.size());
     for (size_t i = 0; i < before.size(); ++i) {
