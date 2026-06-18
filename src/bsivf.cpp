@@ -32,27 +32,31 @@ IndexBSIVF::construct_centroids(size_t stride)
     log::info("Finished constructing {} centroids", centroids.size());
 }
 
-std::pair<size_t, size_t>
-IndexBSIVF::find_nearest_centroid(const Point& query) const
+std::vector<std::pair<size_t, size_t>>
+IndexBSIVF::find_nearest_centroids(const Point& query, size_t nprobe) const
 {
-    log::info("Searching for the closest centroid to query...");
-    size_t pos = 0;
-    size_t best_distance = std::numeric_limits<size_t>::max();
+    // Collect all centroid distances
+    std::vector<std::pair<size_t, size_t>> centroid_dists;
+    centroid_dists.reserve(this->centroids.size());
 
     for (const auto& i : this->centroids) {
-        if (i > this->d_ntotal)
-            break;
+        if (i > this->d_ntotal) break;
         auto dist = distance_hamming(this->d_vectors[i], query);
-        if (dist < best_distance) {
-            best_distance = dist;
-            pos = i;
-        }
+        centroid_dists.push_back({ i, dist });
     }
 
-    log::info(
-      "Found the best centroid at {} with distance {}", pos, best_distance);
+    // Partial sort — only need top n_probe, not full sort
+    nprobe = std::min(nprobe, centroid_dists.size());
+    std::partial_sort(
+        centroid_dists.begin(),
+        centroid_dists.begin() + nprobe,
+        centroid_dists.end(),
+        [](const auto& a, const auto& b) {
+            return a.second < b.second;
+        });
 
-    return { pos, best_distance };
+    centroid_dists.resize(nprobe);
+    return centroid_dists;
 }
 
 bool
@@ -90,74 +94,108 @@ template<MetricType Metric>
 SearchResult
 IndexBSIVF::search_impl(const Point& query,
                         const size_t stride,
-                        const size_t min_stride) const
+                        const size_t min_stride,
+                        const size_t nprobe) const
 {
     assert(min_stride > 0 && stride >= min_stride);
+
     auto compute_dist = [&](const Point& a, const Point& b) -> double {
-        if constexpr (Metric == MetricType::L2) {
-            return distance_l2(a, b);
-        } else if constexpr (Metric == MetricType::HAMMING) {
+        if constexpr (Metric == MetricType::HAMMING)
             return static_cast<double>(distance_hamming(a, b));
-        } else if constexpr (Metric == MetricType::JACCARD) {
+        if constexpr (Metric == MetricType::JACCARD)
             return static_cast<double>(distance_jaccard(a, b));
-        } else
-            return 0.0;
+        if constexpr (Metric == MetricType::L2)
+            return distance_l2(a, b);
+        return 0.0;
     };
 
-    auto [pos, _] = this->find_nearest_centroid(query);
-    double best_distance = compute_dist(query, this->d_vectors[pos]);
+    // Get top-N centroid starting positions
+    auto centroid_candidates = find_nearest_centroids(query, nprobe);
 
-    SearchResult candidate{};
-    candidate.distance = best_distance;
-    candidate.id = this->d_vectors[pos].id;
+    SearchResult best{};
+    best.distance = std::numeric_limits<double>::max();
 
-    size_t s = stride;
+    // Track visited indices to avoid redundant distance computations
+    // where centroid search regions overlap
+    std::unordered_set<size_t> visited;
 
-    while (s > min_stride) {
-        s /= 2;
+    for (const auto& [pos_start, _] : centroid_candidates) {
+        size_t pos = pos_start;
+        double best_distance = compute_dist(query, this->d_vectors[pos]);
 
-        if (pos >= s) {
-            double dist = compute_dist(query, this->d_vectors[pos - s]);
-            if (dist < best_distance) {
-                best_distance = dist;
-                candidate.distance = dist;
-                candidate.id = this->d_vectors[pos - s].id;
-                pos = pos - s;
-                continue;
-            }
+        if (visited.insert(pos).second && best_distance < best.distance) {
+            best.distance = best_distance;
+            best.id       = this->d_vectors[pos].id;
         }
 
-        if (pos + s < this->d_vectors.size()) {
-            if (const double dist =
-                  compute_dist(query, this->d_vectors[pos + s]);
-                dist < best_distance) {
-                best_distance = dist;
-                candidate.distance = dist;
-                candidate.id = this->d_vectors[pos + s].id;
-                pos = pos + s;
+        size_t s = stride;
+
+        while (s > min_stride) {
+            s /= 2;
+
+            size_t best_pos = pos;
+
+            if (pos >= s) {
+                size_t idx = pos - s;
+                if (visited.insert(idx).second) {
+                    double dist = compute_dist(query, this->d_vectors[idx]);
+                    if (dist < best_distance) {
+                        best_distance = dist;
+                        best_pos      = idx;
+                        if (dist < best.distance) {
+                            best.distance = dist;
+                            best.id       = this->d_vectors[idx].id;
+                        }
+                    }
+                }
+            }
+
+            if (pos + s < this->d_vectors.size()) {
+                size_t idx = pos + s;
+                if (visited.insert(idx).second) {
+                    double dist = compute_dist(query, this->d_vectors[idx]);
+                    if (dist < best_distance) {
+                        best_distance = dist;
+                        best_pos      = idx;
+                        if (dist < best.distance) {
+                            best.distance = dist;
+                            best.id       = this->d_vectors[idx].id;
+                        }
+                    }
+                }
+            }
+
+            pos = best_pos;
+        }
+
+        // Linear scan around where this centroid's probe landed
+        size_t left  = (pos >= min_stride) ? pos - min_stride : 0;
+        size_t right = std::min(pos + min_stride + 1, this->d_vectors.size());
+        for (size_t i = left; i < right; ++i) {
+            if (visited.insert(i).second) {
+                double dist = compute_dist(query, this->d_vectors[i]);
+                if (dist < best.distance) {
+                    best.distance = dist;
+                    best.id       = this->d_vectors[i].id;
+                }
             }
         }
     }
 
-    // NOTE:  Linear scan the final neighborhood within min_stride radius
-    size_t left = (pos >= min_stride) ? pos - min_stride : 0;
-    size_t right = std::min(pos + min_stride + 1, this->d_vectors.size());
-    for (size_t i = left; i < right; ++i) {
-        double dist = compute_dist(query, this->d_vectors[i]);
-        if (dist < best_distance) {
-            best_distance = dist;
-            candidate.distance = dist;
-            candidate.id = this->d_vectors[i].id;
-        }
-    }
+    return best;
+}
 
-    return candidate;
+size_t
+IndexBSIVF::num_centroids() const
+{
+    return this->centroids.size();
 }
 
 SearchResult
 IndexBSIVF::search(const Point& query,
                    size_t stride,
                    size_t min_stride,
+                   size_t nprobe,
                    MetricType metric) const
 {
     log::info("Executing Search query: stride = {}, metric = {}",
@@ -175,11 +213,11 @@ IndexBSIVF::search(const Point& query,
 
     switch (metric) {
         case MetricType::L2:
-            return search_impl<MetricType::L2>(query, stride, min_stride);
+            return search_impl<MetricType::L2>(query, stride, min_stride, nprobe);
         case MetricType::HAMMING:
-            return search_impl<MetricType::HAMMING>(query, stride, min_stride);
+            return search_impl<MetricType::HAMMING>(query, stride, min_stride, nprobe);
         case MetricType::JACCARD:
-            return search_impl<MetricType::JACCARD>(query, stride, min_stride);
+            return search_impl<MetricType::JACCARD>(query, stride, min_stride, nprobe);
     }
     return {};
 }
