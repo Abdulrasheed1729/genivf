@@ -6,6 +6,7 @@
 #include "utils.hpp"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <fstream>
 #include <numeric>
@@ -277,11 +278,14 @@ main()
 
     const size_t k = 1;
     const size_t nprobe = 25;
+    // const size_t tolerance = 10;
 
     const std::array<size_t, 3> strides = { 10, 25, 50 };
     const std::array<size_t, 5> min_strides = { 1, 2, 4, 8, 16 };
 
     const std::string summary_file = "bsivf_summary_nprobe_tol_by_stride.csv";
+    // const std::string summary_file =
+    //   std::format("bsivf_summary_nprobe_{}_tol_{}.csv", nprobe, tolerance);
     std::ofstream summary(summary_file);
 
     // CSV header
