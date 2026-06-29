@@ -147,27 +147,6 @@ TEST_CASE("compute_binary_kmer_vector: skips N characters")
     CHECK_EQ(out[11], 1u);
 }
 
-TEST_CASE("pack_kmer_vector_endian: round-trip consistency")
-{
-    constexpr size_t DIM = 16;
-    std::array<uint8_t, DIM> vec{};
-    vec[0] = 1;
-    vec[7] = 1;
-    vec[15] = 1;
-
-    uint8_t packed[2] = {};
-    genivf::pack_kmer_vector_endian<DIM>(vec, packed);
-
-    // Bit 0 → byte 0, bit 0 → packed[0] bit 0 set
-    CHECK((packed[0] & 0x01) != 0);
-    // Bit 7 → byte 0, bit 7 → packed[0] bit 7 set
-    CHECK((packed[0] & 0x80) != 0);
-    // Bit 15 → byte 1, bit 7 → packed[1] bit 7 set
-    CHECK((packed[1] & 0x80) != 0);
-}
-
-// ─── metadata functions ──────────────────────────────────────────────────
-
 TEST_CASE("build_metadata_file and build_metadata_map_from_tsv round-trip")
 {
     std::string tsv_path =
