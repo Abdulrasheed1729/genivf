@@ -61,7 +61,7 @@ load_index(const std::filesystem::path& path)
           "genivf::io::load_index: invalid magic — not a GIVF file");
     }
 
-    const uint8_t version = detail::read_val<uint8_t>(ifs);
+    const auto version = detail::read_val<uint8_t>(ifs);
     if (version != kVersion) {
         throw std::runtime_error(
           "genivf::io::load_index: unsupported file version " +
@@ -69,21 +69,21 @@ load_index(const std::filesystem::path& path)
           ")");
     }
 
-    const size_t num_cells =
+    const auto num_cells =
       static_cast<size_t>(detail::read_val<uint64_t>(ifs));
-    const size_t dim = static_cast<size_t>(detail::read_val<uint64_t>(ifs));
-    const unsigned seed =
+    const auto dim = static_cast<size_t>(detail::read_val<uint64_t>(ifs));
+    const auto seed =
       static_cast<unsigned>(detail::read_val<uint32_t>(ifs));
-    const size_t num_vectors =
+    const auto num_vectors =
       static_cast<size_t>(detail::read_val<uint64_t>(ifs));
 
     IndexIVF index(num_cells, dim, seed);
 
     index.d_clusters.reserve(num_cells);
     for (size_t c = 0; c < num_cells; ++c) {
-        const size_t cluster_id =
+        const auto cluster_id =
           static_cast<size_t>(detail::read_val<uint64_t>(ifs));
-        const size_t centroid_id =
+        const auto centroid_id =
           static_cast<size_t>(detail::read_val<uint64_t>(ifs));
 
         std::vector<uint8_t> centroid_vals(dim);
@@ -92,7 +92,7 @@ load_index(const std::filesystem::path& path)
         Cluster cluster(cluster_id,
                         Point(centroid_id, std::move(centroid_vals)));
 
-        const size_t list_len =
+        const auto list_len =
           static_cast<size_t>(detail::read_val<uint64_t>(ifs));
         cluster.point_indices.reserve(list_len);
         for (size_t i = 0; i < list_len; ++i) {
@@ -110,7 +110,7 @@ load_index(const std::filesystem::path& path)
 
     index.d_vectors.reserve(num_vectors);
     for (size_t v = 0; v < num_vectors; ++v) {
-        const size_t pid = static_cast<size_t>(detail::read_val<uint64_t>(ifs));
+        const auto pid = static_cast<size_t>(detail::read_val<uint64_t>(ifs));
         std::vector<uint8_t> vals(dim);
         detail::read_bytes(ifs, vals.data(), dim);
         index.d_vectors.emplace(pid, Point(pid, std::move(vals)));
@@ -132,8 +132,7 @@ load_index(const std::filesystem::path& path)
                   "cluster references non-existent point ID " +
                   std::to_string(pid));
             }
-            std::copy(it->second.values.begin(),
-                      it->second.values.end(),
+            std::ranges::copy(it->second.values,
                       &cluster.flat_vectors[i * dim]);
         }
     }
@@ -180,21 +179,21 @@ load_flat_index(const std::filesystem::path& path)
           "genivf::io::load_flat_index: invalid magic — not a GIVF file");
     }
 
-    const uint8_t version = detail::read_val<uint8_t>(ifs);
+    const auto version = detail::read_val<uint8_t>(ifs);
     if (version != 2) {
         throw std::runtime_error(
           "genivf::io::load_flat_index: unsupported file version " +
           std::to_string(version) + " (expected 2 for flat index)");
     }
 
-    const size_t dim = static_cast<size_t>(detail::read_val<uint64_t>(ifs));
-    const size_t num_vectors =
+    const auto dim = static_cast<size_t>(detail::read_val<uint64_t>(ifs));
+    const auto num_vectors =
       static_cast<size_t>(detail::read_val<uint64_t>(ifs));
 
     IndexFlat index(dim, num_vectors);
 
     for (size_t v = 0; v < num_vectors; ++v) {
-        const size_t pid = static_cast<size_t>(detail::read_val<uint64_t>(ifs));
+        const auto pid = static_cast<size_t>(detail::read_val<uint64_t>(ifs));
         std::vector<uint8_t> vals(dim);
         detail::read_bytes(ifs, vals.data(), dim);
         index.d_vectors.emplace(pid, Point(pid, std::move(vals)));

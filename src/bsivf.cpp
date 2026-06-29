@@ -10,6 +10,8 @@
 #include "logger.hpp"
 #include "types.hpp"
 
+#include <ranges>
+
 namespace genivf {
 
 IndexBSIVF::IndexBSIVF(size_t dim, size_t ntotal)
@@ -40,20 +42,18 @@ IndexBSIVF::find_nearest_centroids(const Point& query, size_t nprobe) const
     centroid_dists.reserve(this->centroids.size());
 
     for (const auto& i : this->centroids) {
-        if (i > this->d_ntotal) break;
+        if (i > this->d_ntotal)
+            break;
         auto dist = distance_hamming(this->d_vectors[i], query);
-        centroid_dists.push_back({ i, dist });
+        centroid_dists.emplace_back(i, dist);
     }
 
-    // Partial sort — only need top n_probe, not full sort
     nprobe = std::min(nprobe, centroid_dists.size());
     std::partial_sort(
-        centroid_dists.begin(),
-        centroid_dists.begin() + nprobe,
-        centroid_dists.end(),
-        [](const auto& a, const auto& b) {
-            return a.second < b.second;
-        });
+      centroid_dists.begin(),
+      centroid_dists.begin() + static_cast<long>(nprobe),
+      centroid_dists.end(),
+      [](const auto& a, const auto& b) { return a.second < b.second; });
 
     centroid_dists.resize(nprobe);
     return centroid_dists;
@@ -119,13 +119,13 @@ IndexBSIVF::search_impl(const Point& query,
     // where centroid search regions overlap
     std::unordered_set<size_t> visited;
 
-    for (const auto& [pos_start, _] : centroid_candidates) {
+    for (const auto& pos_start : centroid_candidates | std::views::keys) {
         size_t pos = pos_start;
         double best_distance = compute_dist(query, this->d_vectors[pos]);
 
         if (visited.insert(pos).second && best_distance < best.distance) {
             best.distance = best_distance;
-            best.id       = this->d_vectors[pos].id;
+            best.id = this->d_vectors[pos].id;
         }
 
         size_t s = stride;
@@ -141,10 +141,10 @@ IndexBSIVF::search_impl(const Point& query,
                     double dist = compute_dist(query, this->d_vectors[idx]);
                     if (dist < best_distance) {
                         best_distance = dist;
-                        best_pos      = idx;
+                        best_pos = idx;
                         if (dist < best.distance) {
                             best.distance = dist;
-                            best.id       = this->d_vectors[idx].id;
+                            best.id = this->d_vectors[idx].id;
                         }
                     }
                 }
@@ -156,10 +156,10 @@ IndexBSIVF::search_impl(const Point& query,
                     double dist = compute_dist(query, this->d_vectors[idx]);
                     if (dist < best_distance) {
                         best_distance = dist;
-                        best_pos      = idx;
+                        best_pos = idx;
                         if (dist < best.distance) {
                             best.distance = dist;
-                            best.id       = this->d_vectors[idx].id;
+                            best.id = this->d_vectors[idx].id;
                         }
                     }
                 }
@@ -169,14 +169,14 @@ IndexBSIVF::search_impl(const Point& query,
         }
 
         // Linear scan around where this centroid's probe landed
-        size_t left  = (pos >= min_stride) ? pos - min_stride : 0;
+        size_t left = (pos >= min_stride) ? pos - min_stride : 0;
         size_t right = std::min(pos + min_stride + 1, this->d_vectors.size());
         for (size_t i = left; i < right; ++i) {
             if (visited.insert(i).second) {
                 double dist = compute_dist(query, this->d_vectors[i]);
                 if (dist < best.distance) {
                     best.distance = dist;
-                    best.id       = this->d_vectors[i].id;
+                    best.id = this->d_vectors[i].id;
                 }
             }
         }
@@ -213,11 +213,14 @@ IndexBSIVF::search(const Point& query,
 
     switch (metric) {
         case MetricType::L2:
-            return search_impl<MetricType::L2>(query, stride, min_stride, nprobe);
+            return search_impl<MetricType::L2>(
+              query, stride, min_stride, nprobe);
         case MetricType::HAMMING:
-            return search_impl<MetricType::HAMMING>(query, stride, min_stride, nprobe);
+            return search_impl<MetricType::HAMMING>(
+              query, stride, min_stride, nprobe);
         case MetricType::JACCARD:
-            return search_impl<MetricType::JACCARD>(query, stride, min_stride, nprobe);
+            return search_impl<MetricType::JACCARD>(
+              query, stride, min_stride, nprobe);
     }
     return {};
 }

@@ -70,7 +70,8 @@ FastaScanner::next()
             return record;
         }
 
-        // Fast path: if the line has no spaces (which is typical), append it directly.
+        // Fast path: if the line has no spaces (which is typical), append it
+        // directly.
         bool has_space = false;
         for (char c : line) {
             if (std::isspace(static_cast<unsigned char>(c))) {
@@ -80,8 +81,11 @@ FastaScanner::next()
         }
 
         if (!has_space) {
-            if (record.sequence.size() + line.size() > record.sequence.capacity()) {
-                record.sequence.reserve(std::max(record.sequence.capacity() * 2, record.sequence.size() + line.size() + 4096));
+            if (record.sequence.size() + line.size() >
+                record.sequence.capacity()) {
+                record.sequence.reserve(
+                  std::max(record.sequence.capacity() * 2,
+                           record.sequence.size() + line.size() + 4096));
             }
             record.sequence.append(line);
         } else {
@@ -89,7 +93,8 @@ FastaScanner::next()
             for (char c : line) {
                 if (!std::isspace(static_cast<unsigned char>(c))) {
                     if (record.sequence.size() >= record.sequence.capacity()) {
-                        record.sequence.reserve(record.sequence.capacity() * 2 + 4096);
+                        record.sequence.reserve(record.sequence.capacity() * 2 +
+                                                4096);
                     }
                     record.sequence.push_back(c);
                 }
@@ -131,7 +136,7 @@ FastqScanner::next()
     }
     record.header = line.substr(1);
 
-    // Line 2: sequence (use move semantics to avoid copy)
+    // Line 2: sequence
     if (!std::getline(file, line)) {
         throw std::runtime_error("Invalid FASTQ: expected sequence line");
     }
@@ -142,7 +147,7 @@ FastqScanner::next()
         throw std::runtime_error("Invalid FASTQ: expected '+' separator line");
     }
 
-    // Line 4: quality scores (use move semantics to avoid copy)
+    // Line 4: quality scores
     if (!std::getline(file, line)) {
         throw std::runtime_error("Invalid FASTQ: expected quality line");
     }
