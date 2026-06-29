@@ -308,21 +308,22 @@ distance_jaccard(const uint8_t* a, const uint8_t* b, std::size_t N)
                                       static_cast<float>(bits_union);
 }
 
-// NOTE: === Quantisatio Functions ===
+// NOTE: === Quantisation Functions ===
 
-// Convert a d-dimensional float vector to a packed binary vector.
+// Convert a d-dimensional float vector to a packed binary vector of dimension
+// d/8.
 [[nodiscard]] inline bool
 real_to_binary(std::size_t d, const float* x_in, uint8_t* x_out)
 {
     if (d % 8 != 0)
         return false;
-    for (std::size_t i = 0; i < d / 8; ++i) {
+
+    const std::size_t n_bytes = d / 8;
+    for (std::size_t i = 0; i < n_bytes; ++i) {
         uint8_t byte = 0;
-        for (int j = 0; j < 8; ++j) {
-            if (x_in[i * 8 + j] > 0.0f) {
-                byte |= static_cast<uint8_t>(1u << j);
-            }
-        }
+        for (std::size_t j = 0; j < 8; ++j)
+            byte |=
+              static_cast<uint8_t>((x_in[i * 8 + j] > 0.0f ? 1u : 0u) << j);
         x_out[i] = byte;
     }
     return true;
@@ -334,10 +335,10 @@ binary_to_real(std::size_t d, const uint8_t* x_in, float* x_out)
 {
     if (d % 8 != 0)
         return false;
-    for (std::size_t i = 0; i < d; ++i) {
-        x_out[i] =
-          2.0f * static_cast<float>((x_in[i >> 3] >> (i & 7)) & 1u) - 1.0f;
-    }
+
+    for (std::size_t i = 0; i < d; ++i)
+        x_out[i] = ((x_in[i >> 3] >> (i & 7)) & 1u) ? 1.0f : -1.0f;
+
     return true;
 }
 

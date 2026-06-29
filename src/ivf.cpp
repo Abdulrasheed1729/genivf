@@ -141,7 +141,7 @@ IndexIVF::train(std::span<const Point> points, size_t max_iter, double epsilon)
             for (size_t i = 0; i < n; ++i) {
                 if (used[i])
                     continue;
-                double d = static_cast<double>(
+                auto d = static_cast<double>(
                   get_l2_sq(&float_points[i * num_bits], last_ctr));
                 if (d < min_dists_sq[i]) {
                     min_dists_sq[i] = d;

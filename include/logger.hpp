@@ -4,8 +4,7 @@
 #include <iostream>
 #include <print>
 
-namespace genivf {
-namespace log {
+namespace genivf::log {
 
 enum class Level
 {
@@ -17,7 +16,7 @@ enum class Level
 inline Level g_level = Level::INFO;
 
 inline void
-set_level(Level level) noexcept
+set_level(const Level level) noexcept
 {
     g_level = level;
 }
@@ -42,5 +41,5 @@ debug(std::format_string<Args...> fmt, Args&&... args)
     }
 }
 
-} // namespace log
-} // namespace genivf
+} // namespace genivf::log
+
