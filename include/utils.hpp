@@ -259,8 +259,12 @@ distance_hamming(const uint8_t* a, const uint8_t* b, std::size_t N)
     std::size_t i = 0;
 
     // Process in 64-bit (8-byte) chunks to leverage fast CPU instructions
+    // INFO: will continue to  use `std::popcount` for now since not all compilers support
+    // `__builtin_popcount`
     const std::size_t num_words = N / 8;
     if (num_words > 0) {
+        // TODO: I think as part of future work, the bit packing should be in 64-bit by default?
+        // Hmm... there is a natural simd support in cpp 26, hopefully in the future will change to that
         const uint64_t* a_64 = reinterpret_cast<const uint64_t*>(a);
         const uint64_t* b_64 = reinterpret_cast<const uint64_t*>(b);
         for (std::size_t w = 0; w < num_words; ++w) {

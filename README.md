@@ -110,7 +110,6 @@ In addition to the two indexes, additional helper libraries were add `genivf::se
 Contributions are highly welcomed.
 
 ## TODOs
-- [ ] implement simd for hamming distance
 - [ ] implement hybrid index for ivf-bsivf
 - [ ] add more experiments to the example
 - [ ] investigate on more viral datasets
