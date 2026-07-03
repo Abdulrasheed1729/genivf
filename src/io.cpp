@@ -22,25 +22,27 @@ save_index(const IndexIVF& index, const std::filesystem::path& path)
     detail::write_val<uint64_t>(ofs, static_cast<uint64_t>(index.d_num_cells));
     detail::write_val<uint64_t>(ofs, static_cast<uint64_t>(index.d_dim));
     detail::write_val<uint32_t>(ofs, static_cast<uint32_t>(index.d_seed));
-    detail::write_val<uint64_t>(ofs,
-                                static_cast<uint64_t>(index.d_vectors.size()));
+    detail::write_val<uint8_t>(
+      ofs, static_cast<uint8_t>(index.d_init_type));
+    detail::write_val<uint64_t>(
+      ofs, static_cast<uint64_t>(index.d_points.size()));
 
+    // Save all points (flat storage)
+    for (const auto& pt : index.d_points) {
+        detail::write_val<uint64_t>(ofs, static_cast<uint64_t>(pt.id));
+        detail::write_bytes(ofs, pt.values.data(), index.d_dim);
+    }
+
+    // Save clusters (centroid values + point indices)
     for (const Cluster& cluster : index.d_clusters) {
         detail::write_val<uint64_t>(ofs, static_cast<uint64_t>(cluster.id));
-        detail::write_val<uint64_t>(
-          ofs, static_cast<uint64_t>(cluster.centroid.id));
         detail::write_bytes(ofs, cluster.centroid.values.data(), index.d_dim);
 
         detail::write_val<uint64_t>(
           ofs, static_cast<uint64_t>(cluster.point_indices.size()));
-        for (const size_t pid : cluster.point_indices) {
-            detail::write_val<uint64_t>(ofs, static_cast<uint64_t>(pid));
+        for (const size_t idx : cluster.point_indices) {
+            detail::write_val<uint64_t>(ofs, static_cast<uint64_t>(idx));
         }
-    }
-
-    for (const auto& [id, point] : index.d_vectors) {
-        detail::write_val<uint64_t>(ofs, static_cast<uint64_t>(id));
-        detail::write_bytes(ofs, point.values.data(), index.d_dim);
     }
 }
 
@@ -74,23 +76,40 @@ load_index(const std::filesystem::path& path)
     const auto dim = static_cast<size_t>(detail::read_val<uint64_t>(ifs));
     const auto seed =
       static_cast<unsigned>(detail::read_val<uint32_t>(ifs));
-    const auto num_vectors =
+    const auto init_type =
+      static_cast<InitType>(detail::read_val<uint8_t>(ifs));
+    const auto num_points =
       static_cast<size_t>(detail::read_val<uint64_t>(ifs));
 
-    IndexIVF index(num_cells, dim, seed);
+    IndexIVF index(num_cells, dim, seed, init_type);
 
+    // Load points into flat storage
+    index.d_points.reserve(num_points);
+    index.d_point_index.reserve(num_points);
+    for (size_t v = 0; v < num_points; ++v) {
+        const auto pid = static_cast<size_t>(detail::read_val<uint64_t>(ifs));
+        std::vector<uint8_t> vals(dim);
+        detail::read_bytes(ifs, vals.data(), dim);
+        index.d_point_index[pid] = index.d_points.size();
+        index.d_points.emplace_back(pid, std::move(vals));
+    }
+
+    if (index.d_points.size() != num_points) {
+        throw std::runtime_error(
+          "genivf::io::load_index: point count mismatch in file");
+    }
+
+    // Load clusters (centroid values + point indices)
     index.d_clusters.reserve(num_cells);
     for (size_t c = 0; c < num_cells; ++c) {
         const auto cluster_id =
-          static_cast<size_t>(detail::read_val<uint64_t>(ifs));
-        const auto centroid_id =
           static_cast<size_t>(detail::read_val<uint64_t>(ifs));
 
         std::vector<uint8_t> centroid_vals(dim);
         detail::read_bytes(ifs, centroid_vals.data(), dim);
 
         Cluster cluster(cluster_id,
-                        Point(centroid_id, std::move(centroid_vals)));
+                        Point(cluster_id, std::move(centroid_vals)));
 
         const auto list_len =
           static_cast<size_t>(detail::read_val<uint64_t>(ifs));
@@ -106,35 +125,6 @@ load_index(const std::filesystem::path& path)
     if (index.d_clusters.size() != num_cells) {
         throw std::runtime_error(
           "genivf::io::load_index: cluster count mismatch in file");
-    }
-
-    index.d_vectors.reserve(num_vectors);
-    for (size_t v = 0; v < num_vectors; ++v) {
-        const auto pid = static_cast<size_t>(detail::read_val<uint64_t>(ifs));
-        std::vector<uint8_t> vals(dim);
-        detail::read_bytes(ifs, vals.data(), dim);
-        index.d_vectors.emplace(pid, Point(pid, std::move(vals)));
-    }
-
-    if (index.d_vectors.size() != num_vectors) {
-        throw std::runtime_error(
-          "genivf::io::load_index: vector count mismatch in file");
-    }
-
-    for (auto& cluster : index.d_clusters) {
-        cluster.flat_vectors.resize(cluster.point_indices.size() * dim);
-        for (size_t i = 0; i < cluster.point_indices.size(); ++i) {
-            const size_t pid = cluster.point_indices[i];
-            auto it = index.d_vectors.find(pid);
-            if (it == index.d_vectors.end()) {
-                throw std::runtime_error(
-                  "genivf::io::load_index: referential integrity violation — "
-                  "cluster references non-existent point ID " +
-                  std::to_string(pid));
-            }
-            std::ranges::copy(it->second.values,
-                      &cluster.flat_vectors[i * dim]);
-        }
     }
 
     return index;
