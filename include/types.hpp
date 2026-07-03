@@ -15,7 +15,7 @@ struct WindowMetaData
 // Initialisation strategies for k-means centroids.
 enum class InitType
 {
-    RANDOM,        // Uniform random sampling from training points
+    RANDOM,          // Uniform random sampling from training points
     KMEANS_PLUS_PLUS // k-means++ seeding (Arthur & Vassilvitskii 2007)
 };
 
@@ -89,15 +89,13 @@ struct SearchResult
 };
 
 // A single Voronoi cell in the IVF index.
-// `centroid`      — the representative binary vector for this cell.
-// `point_indices` — ids of all points assigned to this cell's inverted list.
-// `id`            — cell index in [0, num_cells).
+// `centroid`:        the representative binary vector for this cell.
+// `point_indices`:   indices into IndexIVF::d_points for points in this cell.
+// `id`:              cell index in [0, num_cells).
 struct Cluster
 {
     Point centroid;
     std::vector<size_t> point_indices;
-    std::vector<uint8_t> flat_vectors; // Contiguous block of vector data for
-                                       // points assigned to this cell
     size_t id;
 
     Cluster(size_t cell_id, Point ctr)
