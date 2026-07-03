@@ -11,7 +11,7 @@
 namespace genivf::io {
 
 inline constexpr uint8_t kMagic[4] = { 0x47, 0x49, 0x56, 0x46 };
-inline constexpr uint8_t kVersion = 1;
+inline constexpr uint8_t kVersion = 2;
 
 namespace detail {
 

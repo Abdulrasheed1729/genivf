@@ -99,8 +99,6 @@ struct IndexIVF
         return !d_clusters.empty();
     }
 
-    // IO functions need direct access to private members to serialise and
-    // reconstruct the index without exposing them through the public API.
     friend void io::save_index(const IndexIVF&, const std::filesystem::path&);
     friend IndexIVF io::load_index(const std::filesystem::path&);
 
@@ -111,7 +109,8 @@ struct IndexIVF
     InitType d_init_type = InitType::RANDOM;
 
     std::vector<Cluster> d_clusters;
-    std::unordered_map<size_t, Point> d_vectors;
+    std::vector<Point> d_points;                      // flat storage
+    std::unordered_map<size_t, size_t> d_point_index; // id -> index in d_points
 
     // Returns the index into d_clusters of the centroid with the minimum
     // Hamming distance to `point`.

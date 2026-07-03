@@ -75,8 +75,8 @@ main()
     const std::string fastq_file = "data/left.fq";
     const std::string flat_index_file = "out.flat.givf";
     const std::string ivf_index_file = "out.ivf.givf";
-    const size_t nprobe = 32;
-    const size_t k = 1;
+    const size_t nprobe = 16;
+    const size_t k = 10;
     double recall = compute_recall(fastq_file,
                                    flat_index_file,
                                    ivf_index_file,
