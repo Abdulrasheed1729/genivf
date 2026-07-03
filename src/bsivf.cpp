@@ -42,8 +42,8 @@ IndexBSIVF::find_nearest_centroids(const Point& query, size_t nprobe) const
     centroid_dists.reserve(this->centroids.size());
 
     for (const auto& i : this->centroids) {
-        if (i > this->d_ntotal)
-            break;
+        if (i >= this->d_ntotal)
+            continue;
         auto dist = distance_hamming(this->d_vectors[i], query);
         centroid_dists.emplace_back(i, dist);
     }
