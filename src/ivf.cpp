@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstring>
 #include <limits>
 #include <numeric>
 #include <random>
@@ -33,7 +34,6 @@ IndexIVF::IndexIVF(size_t num_cells, size_t dim, unsigned seed, InitType init)
     log::info("IndexIVF constructed: init = {}", static_cast<int>(d_init_type));
 }
 
-// Delegate to the four-argument constructor to avoid duplicating validation.
 IndexIVF::IndexIVF(size_t num_cells, size_t dim, InitType init)
   : IndexIVF(num_cells, dim, 42u, init)
 {
@@ -59,6 +59,31 @@ IndexIVF::find_nearest_centroid(const Point& point) const
     return nearest;
 }
 
+static void
+majority_vote_centroid(const std::vector<Point>& points,
+                       const std::vector<size_t>& indices,
+                       size_t dim,
+                       uint8_t* out_centroid)
+{
+    const size_t num_bits = dim * 8;
+    std::vector<uint32_t> counts(num_bits, 0);
+
+    for (const size_t idx : indices) {
+        const uint8_t* data = points[idx].values.data();
+        for (size_t b = 0; b < num_bits; ++b) {
+            counts[b] += (data[b >> 3] >> (b & 7)) & 1u;
+        }
+    }
+
+    std::memset(out_centroid, 0, dim);
+    const uint32_t half = static_cast<uint32_t>(indices.size()) / 2;
+    for (size_t b = 0; b < num_bits; ++b) {
+        if (counts[b] > half) {
+            out_centroid[b >> 3] |= static_cast<uint8_t>(1u << (b & 7));
+        }
+    }
+}
+
 void
 IndexIVF::train(std::span<const Point> points, size_t max_iter, double epsilon)
 {
@@ -69,48 +94,33 @@ IndexIVF::train(std::span<const Point> points, size_t max_iter, double epsilon)
 
     const size_t n = points.size();
     const size_t num_bits = d_dim * 8;
+    (void)epsilon; // unused in binary KMeans (convergence is exact match)
 
     log::info("Training IndexIVF with {} cells, dim = {} bytes ({} bits) on {} "
-              "points (max_iter = {}, epsilon = {:.6f})",
+              "points (max_iter = {})",
               d_num_cells,
               d_dim,
               num_bits,
               n,
-              max_iter,
-              epsilon);
+              max_iter);
 
-    // 1. Unpack binary training points into float vectors
-    log::info(
-      "Unpacking binary vectors into continuous floating-point space...");
-    std::vector<float> float_points(n * num_bits);
-    for (size_t i = 0; i < n; ++i) {
-        if (points[i].values.size() != d_dim) {
+    // Clear old state — keep points until add() is called.
+    d_clusters.clear();
+
+    // Build a local copy of training points for KMeans.
+    std::vector<Point> train_points;
+    train_points.reserve(n);
+    for (const auto& pt : points) {
+        if (pt.values.size() != d_dim) {
             throw std::invalid_argument("IndexIVF::train: point dimension does "
                                         "not match index dimension");
         }
-        if (!binary_to_real(
-              num_bits, points[i].values.data(), &float_points[i * num_bits])) {
-            throw std::runtime_error(
-              "IndexIVF::train: failed to unpack binary vector to floats");
-        }
+        train_points.push_back(pt);
     }
 
-    // Clear both stores so re-training is safe.
-    d_clusters.clear();
-    d_vectors.clear();
-
-    // Squared L2 calculation lambda (used by both initialisation and k-means)
-    auto get_l2_sq = [num_bits](const float* a, const float* b) noexcept {
-        float sum = 0.0f;
-        for (size_t d = 0; d < num_bits; ++d) {
-            const float diff = a[d] - b[d];
-            sum += diff * diff;
-        }
-        return sum;
-    };
-
-    // 2. Initialise float centroids (RANDOM or K-MEANS++)
-    std::vector<float> float_centroids(d_num_cells * num_bits);
+    // Initialise centroids (RANDOM or K-MEANS++)
+    // Store centroid bytes in a flat array (num_cells * d_dim bytes).
+    std::vector<uint8_t> centroid_data(d_num_cells * d_dim, 0);
     std::mt19937 rng(d_seed);
 
     if (d_init_type == InitType::RANDOM) {
@@ -119,37 +129,38 @@ IndexIVF::train(std::span<const Point> points, size_t max_iter, double epsilon)
         std::iota(idx.begin(), idx.end(), 0);
         std::ranges::shuffle(idx, rng);
         for (size_t i = 0; i < d_num_cells; ++i) {
-            std::copy_n(&float_points[idx[i] * num_bits],
-                        num_bits,
-                        &float_centroids[i * num_bits]);
+            std::memcpy(&centroid_data[i * d_dim],
+                        train_points[idx[i]].values.data(),
+                        d_dim);
         }
     } else {
         log::info("Initializing centroids via k-means++ ...");
-        std::vector<double> min_dists_sq(n, std::numeric_limits<double>::max());
+        std::vector<uint32_t> min_dists(n,
+                                        std::numeric_limits<uint32_t>::max());
         std::vector<bool> used(n, false);
 
         std::uniform_int_distribution<size_t> pick(0, n - 1);
         size_t first = pick(rng);
         used[first] = true;
-        std::copy_n(
-          &float_points[first * num_bits], num_bits, &float_centroids[0]);
+        std::memcpy(
+          &centroid_data[0], train_points[first].values.data(), d_dim);
 
         for (size_t c = 1; c < d_num_cells; ++c) {
-            double total = 0.0;
+            uint64_t total = 0;
 
-            const float* last_ctr = &float_centroids[(c - 1) * num_bits];
+            const uint8_t* last_ctr = &centroid_data[(c - 1) * d_dim];
             for (size_t i = 0; i < n; ++i) {
                 if (used[i])
                     continue;
-                auto d = static_cast<double>(
-                  get_l2_sq(&float_points[i * num_bits], last_ctr));
-                if (d < min_dists_sq[i]) {
-                    min_dists_sq[i] = d;
+                const uint32_t d = distance_hamming(
+                  train_points[i].values.data(), last_ctr, d_dim);
+                if (d < min_dists[i]) {
+                    min_dists[i] = d;
                 }
-                total += min_dists_sq[i];
+                total += min_dists[i];
             }
 
-            if (total == 0.0) {
+            if (total == 0) {
                 std::vector<size_t> unused;
                 for (size_t i = 0; i < n; ++i) {
                     if (!used[i])
@@ -158,21 +169,21 @@ IndexIVF::train(std::span<const Point> points, size_t max_iter, double epsilon)
                 std::ranges::shuffle(unused, rng);
                 for (size_t r = c; r < d_num_cells && (r - c) < unused.size();
                      ++r) {
-                    std::copy_n(&float_points[unused[r - c] * num_bits],
-                                num_bits,
-                                &float_centroids[r * num_bits]);
+                    std::memcpy(&centroid_data[r * d_dim],
+                                train_points[unused[r - c]].values.data(),
+                                d_dim);
                 }
                 break;
             }
 
-            std::uniform_real_distribution<double> draw(0.0, total);
-            double threshold = draw(rng);
-            double cumulative = 0.0;
+            std::uniform_int_distribution<uint64_t> draw(0, total - 1);
+            uint64_t threshold = draw(rng);
+            uint64_t cumulative = 0;
             size_t next = 0;
             for (size_t i = 0; i < n; ++i) {
                 if (used[i])
                     continue;
-                cumulative += min_dists_sq[i];
+                cumulative += min_dists[i];
                 if (cumulative >= threshold) {
                     next = i;
                     break;
@@ -180,108 +191,96 @@ IndexIVF::train(std::span<const Point> points, size_t max_iter, double epsilon)
             }
 
             used[next] = true;
-            std::copy_n(&float_points[next * num_bits],
-                        num_bits,
-                        &float_centroids[c * num_bits]);
+            std::memcpy(&centroid_data[c * d_dim],
+                        train_points[next].values.data(),
+                        d_dim);
         }
     }
 
-    // 3. K-Means Main Loop
-    std::vector<std::vector<size_t>> assignments(d_num_cells);
-    const double epsilon_sq = epsilon * epsilon;
-    log::info("Starting K-means iterations...");
-    for (size_t iter = 0; iter < max_iter; ++iter) {
-        for (auto& a : assignments) {
-            a.clear();
-        }
+    // Binary K-Means Main Loop (majority-vote centroids, Hamming
+    // assignment)
+    {
+        std::vector<std::vector<size_t>> assignments(d_num_cells);
+        std::vector<uint8_t> new_centroid_bytes(d_dim, 0);
+        log::info("Starting binary K-means iterations...");
+        for (size_t iter = 0; iter < max_iter; ++iter) {
+            for (auto& a : assignments) {
+                a.clear();
+            }
 
-        // Assignment step (Squared L2 Distance argmin)
-        for (size_t i = 0; i < n; ++i) {
-            const float* pt = &float_points[i * num_bits];
-            size_t nearest = 0;
-            float min_dist = get_l2_sq(pt, &float_centroids[0]);
-
-            for (size_t j = 1; j < d_num_cells; ++j) {
-                const float dist =
-                  get_l2_sq(pt, &float_centroids[j * num_bits]);
-                if (dist < min_dist) {
-                    min_dist = dist;
-                    nearest = j;
+            // Assignment step (Hamming distance)
+            for (size_t i = 0; i < n; ++i) {
+                size_t nearest = 0;
+                uint32_t min_dist = distance_hamming(
+                  train_points[i].values.data(), &centroid_data[0], d_dim);
+                for (size_t j = 1; j < d_num_cells; ++j) {
+                    const uint32_t dist =
+                      distance_hamming(train_points[i].values.data(),
+                                       &centroid_data[j * d_dim],
+                                       d_dim);
+                    if (dist < min_dist) {
+                        min_dist = dist;
+                        nearest = j;
+                    }
                 }
+                assignments[nearest].push_back(i);
             }
-            assignments[nearest].push_back(i);
-        }
 
-        // Update step & Convergence check
-        bool converged = true;
-        size_t active_clusters = 0;
+            // Update step (majority-vote) & convergence check
+            bool converged = true;
+            size_t active_clusters = 0;
 
-        for (size_t i = 0; i < d_num_cells; ++i) {
-            if (assignments[i].empty()) {
-                log::debug("Iteration {}: Cell {} had 0 assignments; keeping "
-                           "old centroid",
-                           iter,
-                           i);
-                continue;
-            }
-            active_clusters++;
-
-            const size_t count = assignments[i].size();
-            std::vector<float> new_centroid(num_bits, 0.0f);
-
-            // Accumulate
-            for (const size_t pt_idx : assignments[i]) {
-                const float* pt = &float_points[pt_idx * num_bits];
-                for (size_t d = 0; d < num_bits; ++d) {
-                    new_centroid[d] += pt[d];
+            for (size_t i = 0; i < d_num_cells; ++i) {
+                if (assignments[i].empty()) {
+                    log::debug("Iteration {}: Cell {} had 0 assignments; "
+                               "reinitializing to random point",
+                               iter,
+                               i);
+                    std::uniform_int_distribution<size_t> pick_idx(0, n - 1);
+                    size_t rand_idx = pick_idx(rng);
+                    std::memcpy(&centroid_data[i * d_dim],
+                                train_points[rand_idx].values.data(),
+                                d_dim);
+                    converged = false;
+                    continue;
                 }
+                active_clusters++;
+
+                majority_vote_centroid(train_points,
+                                       assignments[i],
+                                       d_dim,
+                                       new_centroid_bytes.data());
+
+                const uint32_t shift = distance_hamming(
+                  &centroid_data[i * d_dim], new_centroid_bytes.data(), d_dim);
+                if (shift > 0) {
+                    converged = false;
+                }
+
+                std::memcpy(
+                  &centroid_data[i * d_dim], new_centroid_bytes.data(), d_dim);
             }
 
-            // Average
-            for (size_t d = 0; d < num_bits; ++d) {
-                new_centroid[d] /= static_cast<float>(count);
+            log::info("Iteration {:2d}: Centroids updated ({} active cells). "
+                      "Converged = {}",
+                      iter,
+                      active_clusters,
+                      converged);
+
+            if (converged) {
+                log::info("Binary K-Means training converged at iteration {}.",
+                          iter + 1);
+                break;
             }
-
-            // Calculate shift distance
-            float shift = 0.0f;
-            const float* old_c = &float_centroids[i * num_bits];
-            for (size_t d = 0; d < num_bits; ++d) {
-                float diff = old_c[d] - new_centroid[d];
-                shift += diff * diff;
-            }
-
-            if (shift > epsilon_sq) {
-                converged = false;
-            }
-
-            // Update
-            std::ranges::copy(new_centroid, &float_centroids[i * num_bits]);
-        }
-
-        log::info("Iteration {:2d}: Centroids updated ({} active cells). "
-                  "Movement converged = {}",
-                  iter,
-                  active_clusters,
-                  converged);
-
-        if (converged) {
-            log::info("K-Means training converged early at iteration {}.",
-                      iter + 1);
-            break;
         }
     }
 
-    // 4. Binarize float centroids and store them in d_clusters
-    log::info("Binarizing continuous centroids back to packed binary space...");
+    // Store centroids in d_clusters
     d_clusters.reserve(d_num_cells);
     for (size_t i = 0; i < d_num_cells; ++i) {
-        std::vector<uint8_t> packed_centroid(d_dim, 0u);
-        if (!real_to_binary(num_bits,
-                            &float_centroids[i * num_bits],
-                            packed_centroid.data())) {
-            throw std::runtime_error(
-              "IndexIVF::train: failed to pack float centroid to binary");
-        }
+        std::vector<uint8_t> packed_centroid(centroid_data.data() + i * d_dim,
+                                             centroid_data.data() +
+                                               (i + 1) * d_dim);
         d_clusters.emplace_back(i, Point(i, std::move(packed_centroid)));
     }
     log::info("Training completed successfully.");
@@ -302,23 +301,16 @@ IndexIVF::add(std::span<const Point> points)
               "IndexIVF::add: point dimension does not match index dimension");
         }
 
-        // emplace() silently no-ops on a key collision, which would leave the
-        // inverted list pointing at the old vector — detect it explicitly.
-        auto [it, inserted] = d_vectors.emplace(point.id, point);
+        auto [it, inserted] = d_point_index.emplace(point.id, d_points.size());
         if (!inserted) {
             throw std::invalid_argument("IndexIVF::add: duplicate point id " +
                                         std::to_string(point.id));
         }
 
-        const size_t cell = find_nearest_centroid(point);
-        d_clusters[cell].point_indices.push_back(point.id);
+        d_points.push_back(point);
 
-        // Contiguous layout: append values directly to flat_vectors of the
-        // cluster
-        d_clusters[cell].flat_vectors.insert(
-          d_clusters[cell].flat_vectors.end(),
-          point.values.begin(),
-          point.values.end());
+        const size_t cell = find_nearest_centroid(point);
+        d_clusters[cell].point_indices.push_back(d_points.size() - 1);
 
         log::debug("Added point ID {} -> assigned to Cell {}", point.id, cell);
     }
@@ -365,29 +357,27 @@ IndexIVF::search_impl(const Point& query, size_t k, size_t nprobe) const
         const size_t cell_idx = centroid_dists[p].second;
         const auto& cluster = d_clusters[cell_idx];
 
-        log::debug("Probing cell rank {}: Cell ID = {} (centroid ID = {}, dist "
-                   "= {:.4f}), containing {} vectors",
+        log::debug("Probing cell rank {}: Cell ID = {} (dist = {:.4f}), "
+                   "containing {} vectors",
                    p,
                    cell_idx,
-                   cluster.centroid.id,
                    centroid_dists[p].first,
                    cluster.point_indices.size());
 
-        for (size_t i = 0; i < cluster.point_indices.size(); ++i) {
-            const size_t point_id = cluster.point_indices[i];
-            const uint8_t* vector_data = &cluster.flat_vectors[i * d_dim];
-
+        for (const size_t point_idx : cluster.point_indices) {
+            const auto& pt = d_points[point_idx];
             double dist = 0.0;
             if constexpr (Metric == MetricType::L2) {
-                dist = distance_l2(query.values.data(), vector_data, d_dim);
+                dist =
+                  distance_l2(query.values.data(), pt.values.data(), d_dim);
             } else if constexpr (Metric == MetricType::HAMMING) {
-                dist = static_cast<double>(
-                  distance_hamming(query.values.data(), vector_data, d_dim));
+                dist = static_cast<double>(distance_hamming(
+                  query.values.data(), pt.values.data(), d_dim));
             } else if constexpr (Metric == MetricType::JACCARD) {
-                dist = static_cast<double>(
-                  distance_jaccard(query.values.data(), vector_data, d_dim));
+                dist = static_cast<double>(distance_jaccard(
+                  query.values.data(), pt.values.data(), d_dim));
             }
-            candidates.push_back({ point_id, dist });
+            candidates.push_back({ pt.id, dist });
         }
     }
 
