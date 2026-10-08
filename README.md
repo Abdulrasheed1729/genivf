@@ -110,6 +110,7 @@ In addition to the two indexes, additional helper libraries were add `genivf::se
 Contributions are highly welcomed.
 
 ## TODOs
+- [ ] remove unnecessary exceptions and replace them with asserts
 - [ ] implement hybrid index for ivf-bsivf
 - [ ] add more experiments to the example
 - [ ] investigate on more viral datasets
