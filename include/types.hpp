@@ -10,7 +10,7 @@ namespace genivf {
 struct WindowMetaData
 {
     std::string sequence_name;
-    int start_pos = 0;
+    size_t start_pos = 0;
 };
 // Initialisation strategies for k-means centroids.
 enum class InitType
@@ -36,13 +36,13 @@ struct Point
     size_t id;
     std::vector<uint8_t> values;
 
-    Point(size_t id, std::vector<uint8_t> vals)
+    Point(const size_t id, std::vector<uint8_t> vals)
       : id(id)
       , values(std::move(vals))
     {
     }
 
-    Point(size_t id, std::initializer_list<uint8_t> args)
+    Point(const size_t id,const std::initializer_list<uint8_t> args)
       : id(id)
       , values(args)
     {
@@ -54,13 +54,13 @@ struct Point
     Point& operator=(Point&&) = default;
 
     // Returns the packed byte at position `index` (not a bit index).
-    [[nodiscard]] uint8_t operator[](size_t index) const noexcept
+    [[nodiscard]] uint8_t operator[](const size_t index) const noexcept
     {
         return values[index];
     }
 
     // Checked access. Throws `std::out_of_range` if `index` is out of range.
-    [[nodiscard]] uint8_t at(size_t index) const
+    [[nodiscard]] uint8_t at(const size_t index) const
     {
         if (index >= values.size()) {
             throw std::out_of_range(
@@ -100,7 +100,7 @@ struct Cluster
                                        // points assigned to this cell
     size_t id;
 
-    Cluster(size_t cell_id, Point ctr)
+    Cluster(const size_t cell_id, Point ctr)
       : centroid(std::move(ctr))
       , id(cell_id)
     {

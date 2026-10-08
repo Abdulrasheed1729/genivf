@@ -6,27 +6,64 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <source_location>
+#include <iostream>
 
 #include "seq.hpp"
 #include "types.hpp"
 
 namespace genivf {
 
+// TODO(abdulrasheed): all the exceptions in this codebase need to be replaced with assertions.
+inline void
+        genivf_assert(
+                        const bool condition,
+                        const std::string_view message,
+                        const std::source_location& location = std::source_location::current())
+    {
+        if (not condition) [[unlikely]] {
+            std::cerr << location.file_name() << ':' << location.function_name() << ':'
+                << location.line() << ": " << message << '\n';
+            std::abort();
+        }
+    }
+    
+    inline void
+        genivf_assert_testing(
+                                const bool condition,
+                                const std::string& message,
+                                const std::source_location& location = std::source_location::current())
+    {
+        if (not condition) [[unlikely]] {
+            std::cerr << location.file_name() << ':' << location.function_name() << ':'
+                << location.line() << ": " << message << '\n';
+            throw std::logic_error{ message };
+        }
+    }
+    
+#ifdef GENIVF_TESTING
+#define GENIVF_ASSERT(condition, message)                                    \
+genivf_assert_testing(condition, message)
+#else
+#define GENIVF_ASSERT(condition, message) genivf_assert(condition, message)
+#endif
+
 template<size_t KMER>
 static constexpr size_t
 kmer_vector_size()
 {
-    return (size_t(1) << (2u * KMER));
+    return static_cast<size_t>(1) << (2u * KMER);
 }
 
+// TODO(abdulrasheed): should the "-1" on the default be replaced with "0". 
+// Still thinking about that.
 inline std::int8_t
-base_to_bits(char base) noexcept
+base_to_bits(const char base) noexcept
 {
     switch (base) {
         case 'A':
@@ -47,7 +84,7 @@ base_to_bits(char base) noexcept
 }
 
 template<size_t KMER_K, size_t KMER_DIM>
-inline void
+void
 compute_binary_kmer_vector(const char* sequence,
                            size_t len,
                            std::array<std::uint8_t, KMER_DIM>& out)
@@ -57,13 +94,13 @@ compute_binary_kmer_vector(const char* sequence,
         return;
     }
 
-    constexpr std::uint32_t MASK =
+    constexpr auto MASK =
       static_cast<std::uint32_t>(KMER_DIM - 1); // keep last 2*K bits
     std::uint32_t val = 0;
     int run = 0; // number of consecutive valid bases seen
 
     for (std::size_t i = 0; i < len; ++i) {
-        int code = base_to_bits(sequence[i]);
+        const auto code = base_to_bits(sequence[i]);
         if (code < 0) {
             // Break k-mer when encountering non-ACGT.
             run = 0;
@@ -99,6 +136,7 @@ pack_kmer_vector_endian(const std::array<std::uint8_t, KMER_DIM>& kmer_vector,
             continue;
         std::size_t byte_idx = bit / 8;
         std::size_t bit_in_byte = bit % 8;
+	// TODO(abdulrasheed): this should be in little in endian for reason.
         out[byte_idx] |= static_cast<std::uint8_t>(1u << (7 - bit_in_byte));
     }
 }
@@ -199,7 +237,7 @@ build_metadata_map_from_tsv(const std::string& tsv_file,
         std::getline(iss, idx_str, '\t');
         std::getline(iss, sequence_name, '\t');
         std::getline(iss, start_pos_str, '\t');
-        idx = std::stoul(idx_str.c_str());
+        idx = std::stoul(idx_str);
         meta_data.start_pos = std::stoi(start_pos_str);
         meta_data.sequence_name = std::move(sequence_name);
 
@@ -210,7 +248,7 @@ build_metadata_map_from_tsv(const std::string& tsv_file,
 }
 
 template<size_t KMER_K, size_t KMER_DIM>
-inline void
+void
 build_query_kmer_vectors(const std::string& fastq_file,
                          std::vector<std::vector<std::uint8_t>>& out)
 {
@@ -229,12 +267,15 @@ build_query_kmer_vectors(const std::string& fastq_file,
     }
 }
 
-// NOTE: =====Distance Functions ========
+///////////////////////////////////////////////////////
+// 	Distance Functions 
+
 
 // Returns the squared Euclidean distance between two byte arrays of length N.
 [[nodiscard]] inline double
 distance_l2_sq(const uint8_t* a, const uint8_t* b, std::size_t N)
 {
+    GENIVF_ASSERT(a != nullptr && b != nullptr, "Null vectors cannot be evaluated");
     double sum = 0.0;
     for (std::size_t i = 0; i < N; ++i) {
         const double diff =
@@ -247,6 +288,7 @@ distance_l2_sq(const uint8_t* a, const uint8_t* b, std::size_t N)
 [[nodiscard]] inline double
 distance_l2(const uint8_t* a, const uint8_t* b, std::size_t N)
 {
+	GENIVF_ASSERT(a != nullptr && b != nullptr, "Null vectors cannot be eveluated");
     return std::sqrt(distance_l2_sq(a, b, N));
 }
 
@@ -255,6 +297,7 @@ distance_l2(const uint8_t* a, const uint8_t* b, std::size_t N)
 [[nodiscard]] inline uint32_t
 distance_hamming(const uint8_t* a, const uint8_t* b, std::size_t N)
 {
+	GENIVF_ASSERT(a != nullptr && b != nullptr, "Null vectors cannot be eveluated");
     uint32_t d = 0;
     std::size_t i = 0;
 
@@ -265,10 +308,9 @@ distance_hamming(const uint8_t* a, const uint8_t* b, std::size_t N)
     if (num_words > 0) {
         // TODO: I think as part of future work, the bit packing should be in 64-bit by default?
         // Hmm... there is a natural simd support in cpp 26, hopefully in the future will change to that
-        const uint64_t* a_64 = reinterpret_cast<const uint64_t*>(a);
-        const uint64_t* b_64 = reinterpret_cast<const uint64_t*>(b);
+
         for (std::size_t w = 0; w < num_words; ++w) {
-            d += std::popcount(a_64[w] ^ b_64[w]);
+            d += std::popcount(static_cast<uint8_t>(a[w] ^ b[w]));
         }
         i = num_words * 8;
     }
@@ -285,6 +327,7 @@ distance_hamming(const uint8_t* a, const uint8_t* b, std::size_t N)
 [[nodiscard]] inline float
 distance_jaccard(const uint8_t* a, const uint8_t* b, std::size_t N)
 {
+    GENIVF_ASSERT(a != nullptr && b != nullptr, "Null vectors cannot be eveluated");
     uint32_t bits_union = 0;
     uint32_t bits_intersection = 0;
     std::size_t i = 0;
@@ -292,11 +335,9 @@ distance_jaccard(const uint8_t* a, const uint8_t* b, std::size_t N)
     // Process in 64-bit (8-byte) chunks
     const std::size_t num_words = N / 8;
     if (num_words > 0) {
-        const uint64_t* a_64 = reinterpret_cast<const uint64_t*>(a);
-        const uint64_t* b_64 = reinterpret_cast<const uint64_t*>(b);
         for (std::size_t w = 0; w < num_words; ++w) {
-            bits_union += std::popcount(a_64[w] | b_64[w]);
-            bits_intersection += std::popcount(a_64[w] & b_64[w]);
+            bits_union += std::popcount(static_cast<uint8_t>(a[w] | b[w]));
+            bits_intersection += std::popcount(static_cast<uint8_t>(a[w] & b[w]));
         }
         i = num_words * 8;
     }
@@ -341,7 +382,7 @@ binary_to_real(std::size_t d, const uint8_t* x_in, float* x_out)
         return false;
 
     for (std::size_t i = 0; i < d; ++i)
-        x_out[i] = ((x_in[i >> 3] >> (i & 7)) & 1u) ? 1.0f : -1.0f;
+        x_out[i] = (x_in[i >> 3] >> (i & 7)) & 1u ? 1.0f : -1.0f;
 
     return true;
 }
