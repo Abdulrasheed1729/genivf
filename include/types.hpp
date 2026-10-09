@@ -20,11 +20,11 @@ enum class InitType
 };
 
 // Metric types for distance calculations.
+// TODO(abdulrasheed): remove this after everything. We only need the Hamming distance
 enum class MetricType
 {
     L2,
     HAMMING,
-    JACCARD
 };
 
 // A container representing a single packed-binary datapoint.

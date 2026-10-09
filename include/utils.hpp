@@ -120,7 +120,7 @@ compute_binary_kmer_vector(const char* sequence,
 }
 
 template<size_t KMER_DIM>
-inline void
+void
 pack_kmer_vector_endian(const std::array<std::uint8_t, KMER_DIM>& kmer_vector,
                         std::uint8_t* out)
 {
@@ -141,36 +141,6 @@ pack_kmer_vector_endian(const std::array<std::uint8_t, KMER_DIM>& kmer_vector,
     }
 }
 
-template<size_t KMER_K, size_t KMER_DIM>
-void
-build_kmer_vectors_from_fasta_file(
-  const std::string& fasta_file_path,
-  std::vector<std::array<uint8_t, KMER_DIM>>& output_vector,
-  std::vector<WindowMetaData>& windows,
-  size_t window_size = 50,
-  size_t stride = 1)
-{
-    seq::FastaScanner scanner(fasta_file_path);
-
-    while (scanner.hasNext()) {
-        seq::FastaRecord record = scanner.next();
-        std::string sequence = record.sequence;
-
-        for (size_t i = 0; i + window_size <= sequence.size(); i += stride) {
-            std::array<uint8_t, KMER_DIM> v;
-            v.fill(0);
-            compute_binary_kmer_vector<KMER_K, KMER_DIM>(
-              sequence.data() + i, window_size, v);
-
-            output_vector.push_back(std::move(v));
-            WindowMetaData meta;
-            meta.sequence_name = record.header;
-            meta.start_pos = i;
-            windows.push_back(std::move(meta));
-        }
-    }
-}
-
 template<size_t KMER_DIM>
 bool
 build_packed_kmer_vectors(
@@ -180,8 +150,8 @@ build_packed_kmer_vectors(
     if (input_vectors.empty())
         return false;
 
-    size_t nb = input_vectors.size();
-    size_t num_of_bytes = KMER_DIM >> 3;
+    const size_t nb = input_vectors.size();
+    const size_t num_of_bytes = KMER_DIM >> 3;
 
     packed_vectors.resize(nb * num_of_bytes);
 
@@ -194,6 +164,36 @@ build_packed_kmer_vectors(
         return false;
 
     return true;
+}
+
+template<size_t KMER_K, size_t KMER_DIM>
+void
+build_kmer_vectors_from_fasta_file(
+  const std::string& fasta_file_path,
+  std::vector<std::array<uint8_t, KMER_DIM>>& output_vector,
+  std::vector<WindowMetaData>& windows,
+  const size_t window_size = 50,
+  const size_t stride = 1)
+{
+  seq::FastaScanner scanner(fasta_file_path);
+
+  while (scanner.hasNext()) {
+    seq::FastaRecord record = scanner.next();
+    std::string sequence = record.sequence;
+
+    for (size_t i = 0; i + window_size <= sequence.size(); i += stride) {
+      std::array<uint8_t, KMER_DIM> v;
+      v.fill(0);
+      compute_binary_kmer_vector<KMER_K, KMER_DIM>(
+        sequence.data() + i, window_size, v);
+
+      output_vector.push_back(std::move(v));
+      WindowMetaData meta;
+      meta.sequence_name = record.header;
+      meta.start_pos = i;
+      windows.push_back(std::move(meta));
+    }
+  }
 }
 
 inline bool
@@ -320,37 +320,6 @@ distance_hamming(const uint8_t* a, const uint8_t* b, std::size_t N)
         d += std::popcount(static_cast<uint8_t>(a[i] ^ b[i]));
     }
     return d;
-}
-
-// Computes the Jaccard distance between two packed-binary vectors using 64-bit
-// words.
-[[nodiscard]] inline float
-distance_jaccard(const uint8_t* a, const uint8_t* b, std::size_t N)
-{
-    GENIVF_ASSERT(a != nullptr && b != nullptr, "Null vectors cannot be eveluated");
-    uint32_t bits_union = 0;
-    uint32_t bits_intersection = 0;
-    std::size_t i = 0;
-
-    // Process in 64-bit (8-byte) chunks
-    const std::size_t num_words = N / 8;
-    if (num_words > 0) {
-        for (std::size_t w = 0; w < num_words; ++w) {
-            bits_union += std::popcount(static_cast<uint8_t>(a[w] | b[w]));
-            bits_intersection += std::popcount(static_cast<uint8_t>(a[w] & b[w]));
-        }
-        i = num_words * 8;
-    }
-
-    // Process remaining bytes
-    for (; i < N; ++i) {
-        bits_union += std::popcount(static_cast<uint8_t>(a[i] | b[i]));
-        bits_intersection += std::popcount(static_cast<uint8_t>(a[i] & b[i]));
-    }
-
-    return bits_union == 0 ? 0.0f
-                           : 1.0f - static_cast<float>(bits_intersection) /
-                                      static_cast<float>(bits_union);
 }
 
 // NOTE: === Quantisation Functions ===
