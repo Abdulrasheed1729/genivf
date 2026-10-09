@@ -2,7 +2,10 @@
 
 ### Code Quality
 - [ ]  replace unnecessary exceptions with assertions
+    - [x] ivf 
+    - [ ] bsivf and the utils
 - [ ] the io code need to change
+- [x] jaccard distance function is not needed again
 
 ### Performance ⚡
 

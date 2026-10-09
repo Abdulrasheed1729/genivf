@@ -12,29 +12,19 @@
 
 namespace genivf {
 
-static void
-validate_ivf_params(size_t num_cells, size_t dim)
-{
-    if (num_cells == 0) {
-        throw std::invalid_argument("IndexIVF: num_cells must be > 0");
-    }
-    if (dim == 0) {
-        throw std::invalid_argument("IndexIVF: dim must be > 0");
-    }
-}
-
-IndexIVF::IndexIVF(size_t num_cells, size_t dim, unsigned seed, InitType init)
+IndexIVF::IndexIVF(const size_t num_cells, const size_t dim, const unsigned seed, const InitType init)
   : d_num_cells(num_cells)
   , d_dim(dim)
   , d_seed(seed)
   , d_init_type(init)
 {
-    validate_ivf_params(num_cells, dim);
+    GENIVF_ASSERT(num_cells > 0, "num_cells must be > 0");
+    GENIVF_ASSERT(dim > 0, "come on!, dimension must be positive");
     log::info("IndexIVF constructed: init = {}", static_cast<int>(d_init_type));
 }
 
 // Delegate to the four-argument constructor to avoid duplicating validation.
-IndexIVF::IndexIVF(size_t num_cells, size_t dim, InitType init)
+IndexIVF::IndexIVF(const size_t num_cells, const size_t dim, const InitType init)
   : IndexIVF(num_cells, dim, 42u, init)
 {
 }
@@ -42,7 +32,7 @@ IndexIVF::IndexIVF(size_t num_cells, size_t dim, InitType init)
 size_t
 IndexIVF::find_nearest_centroid(const Point& point) const
 {
-    assert(!d_clusters.empty());
+    GENIVF_ASSERT(!d_clusters.empty(), "clusters must be non-empty to find the closest centroid");
 
     size_t nearest = 0;
     uint32_t min_dist = distance_hamming(
@@ -62,10 +52,7 @@ IndexIVF::find_nearest_centroid(const Point& point) const
 void
 IndexIVF::train(std::span<const Point> points, size_t max_iter, double epsilon)
 {
-    if (points.size() < d_num_cells) {
-        throw std::invalid_argument(
-          "IndexIVF::train: need at least num_cells training points");
-    }
+    GENIVF_ASSERT(points.size() > d_num_cells, "IndexIVF::train: need at least num_cells training points");
 
     const size_t n = points.size();
     const size_t num_bits = d_dim * 8;
@@ -79,15 +66,14 @@ IndexIVF::train(std::span<const Point> points, size_t max_iter, double epsilon)
               max_iter,
               epsilon);
 
-    // 1. Unpack binary training points into float vectors
+    // Unpack binary training points into float vectors
     log::info(
       "Unpacking binary vectors into continuous floating-point space...");
     std::vector<float> float_points(n * num_bits);
     for (size_t i = 0; i < n; ++i) {
-        if (points[i].values.size() != d_dim) {
-            throw std::invalid_argument("IndexIVF::train: point dimension does "
-                                        "not match index dimension");
-        }
+
+        GENIVF_ASSERT(points[i].values.size() == d_dim, "IndexIVF::train: point dimension must match index dimension");
+
         if (!binary_to_real(
               num_bits, points[i].values.data(), &float_points[i * num_bits])) {
             throw std::runtime_error(
@@ -109,7 +95,7 @@ IndexIVF::train(std::span<const Point> points, size_t max_iter, double epsilon)
         return sum;
     };
 
-    // 2. Initialise float centroids (RANDOM or K-MEANS++)
+    // Initialise float centroids (RANDOM or K-MEANS++)
     std::vector<float> float_centroids(d_num_cells * num_bits);
     std::mt19937 rng(d_seed);
 
@@ -125,8 +111,8 @@ IndexIVF::train(std::span<const Point> points, size_t max_iter, double epsilon)
         }
     } else {
         log::info("Initializing centroids via k-means++ ...");
-        std::vector<double> min_dists_sq(n, std::numeric_limits<double>::max());
-        std::vector<bool> used(n, false);
+        std::vector min_dists_sq(n, std::numeric_limits<double>::max());
+        std::vector used(n, false);
 
         std::uniform_int_distribution<size_t> pick(0, n - 1);
         size_t first = pick(rng);
@@ -165,7 +151,7 @@ IndexIVF::train(std::span<const Point> points, size_t max_iter, double epsilon)
                 break;
             }
 
-            std::uniform_real_distribution<double> draw(0.0, total);
+            std::uniform_real_distribution draw(0.0, total);
             double threshold = draw(rng);
             double cumulative = 0.0;
             size_t next = 0;
@@ -227,7 +213,7 @@ IndexIVF::train(std::span<const Point> points, size_t max_iter, double epsilon)
             active_clusters++;
 
             const size_t count = assignments[i].size();
-            std::vector<float> new_centroid(num_bits, 0.0f);
+            std::vector new_centroid(num_bits, 0.0f);
 
             // Accumulate
             for (const size_t pt_idx : assignments[i]) {
@@ -288,11 +274,9 @@ IndexIVF::train(std::span<const Point> points, size_t max_iter, double epsilon)
 }
 
 void
-IndexIVF::add(std::span<const Point> points)
+IndexIVF::add(const std::span<const Point> points)
 {
-    if (!is_trained()) {
-        throw std::logic_error("IndexIVF::add: call train() before add()");
-    }
+    GENIVF_ASSERT(is_trained(),"IndexIVF::add: call train() before add()");
 
     log::info("Adding {} points to the index...", points.size());
 
@@ -327,7 +311,7 @@ IndexIVF::add(std::span<const Point> points)
 
 template<MetricType Metric>
 std::vector<SearchResult>
-IndexIVF::search_impl(const Point& query, size_t k, size_t nprobe) const
+IndexIVF::search_impl(const Point& query,const size_t k, const size_t nprobe) const
 {
     log::debug(
       "search_impl: running compile-time specialization for MetricType = {}",
@@ -344,11 +328,6 @@ IndexIVF::search_impl(const Point& query, size_t k, size_t nprobe) const
         } else if constexpr (Metric == MetricType::HAMMING) {
             dist = static_cast<double>(
               distance_hamming(query.values.data(),
-                               d_clusters[i].centroid.values.data(),
-                               d_dim));
-        } else if constexpr (Metric == MetricType::JACCARD) {
-            dist = static_cast<double>(
-              distance_jaccard(query.values.data(),
                                d_clusters[i].centroid.values.data(),
                                d_dim));
         }
@@ -383,11 +362,8 @@ IndexIVF::search_impl(const Point& query, size_t k, size_t nprobe) const
             } else if constexpr (Metric == MetricType::HAMMING) {
                 dist = static_cast<double>(
                   distance_hamming(query.values.data(), vector_data, d_dim));
-            } else if constexpr (Metric == MetricType::JACCARD) {
-                dist = static_cast<double>(
-                  distance_jaccard(query.values.data(), vector_data, d_dim));
             }
-            candidates.push_back({ point_id, dist });
+            candidates.push_back({ .id = point_id, .distance = dist });
         }
     }
 
@@ -412,18 +388,11 @@ IndexIVF::search(const Point& query,
                  size_t nprobe,
                  MetricType metric) const
 {
-    if (!is_trained()) {
-        throw std::logic_error(
-          "IndexIVF::search: call train() before search()");
-    }
-    if (nprobe == 0 || nprobe > d_clusters.size()) {
-        throw std::invalid_argument(
-          "IndexIVF::search: nprobe must be in [1, num_cells]");
-    }
-    if (query.values.size() != d_dim) {
-        throw std::invalid_argument(
-          "IndexIVF::search: query dimension does not match index dimension");
-    }
+    GENIVF_ASSERT(is_trained(), "IndexIVF::search: call train() before search()");
+    GENIVF_ASSERT(nprobe > 0 && nprobe < d_clusters.size(), "IndexIVF::search: nprobe must be in [1, num_cells]");
+
+    GENIVF_ASSERT(query.values.size() == d_dim, "IndexIVF::search: query dimension must match index dimension");
+
     if (k == 0) {
         return {};
     }
@@ -438,8 +407,6 @@ IndexIVF::search(const Point& query,
             return search_impl<MetricType::L2>(query, k, nprobe);
         case MetricType::HAMMING:
             return search_impl<MetricType::HAMMING>(query, k, nprobe);
-        case MetricType::JACCARD:
-            return search_impl<MetricType::JACCARD>(query, k, nprobe);
     }
     return {};
 }

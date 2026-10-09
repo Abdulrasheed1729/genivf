@@ -23,28 +23,21 @@ load_index(const std::filesystem::path&);
 [[nodiscard]] inline uint32_t
 distance_hamming(const Point& a, const Point& b)
 {
-    assert(a.values.size() == b.values.size());
+    GENIVF_ASSERT(a.values.size() == b.values.size(), "points of the same dimension needed");
     return distance_hamming(a.values.data(), b.values.data(), a.values.size());
-}
-
-[[nodiscard]] inline float
-distance_jaccard(const Point& a, const Point& b)
-{
-    assert(a.values.size() == b.values.size());
-    return distance_jaccard(a.values.data(), b.values.data(), a.values.size());
 }
 
 [[nodiscard]] inline double
 distance_l2(const Point& a, const Point& b)
 {
-    assert(a.values.size() == b.values.size());
+    GENIVF_ASSERT(a.values.size() == b.values.size(), "points of the same dimension needed");
     return distance_l2(a.values.data(), b.values.data(), a.values.size());
 }
 
 [[nodiscard]] inline double
 distance_l2_sq(const Point& a, const Point& b)
 {
-    assert(a.values.size() == b.values.size());
+    GENIVF_ASSERT(a.values.size() == b.values.size(), "points of the same dimension needed");
     return distance_l2_sq(a.values.data(), b.values.data(), a.values.size());
 }
 

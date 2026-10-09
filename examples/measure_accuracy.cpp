@@ -47,8 +47,8 @@ compute_recall(const std::string& fastq_file,
 
         std::vector<size_t> approx_ids;
         approx_ids.reserve(approx.size());
-        for (const auto& r : approx) {
-            approx_ids.push_back(r.id);
+        for (const auto& [id, distance] : approx) {
+            approx_ids.push_back(id);
         }
         std::ranges::sort(approx_ids);
 
@@ -70,7 +70,7 @@ compute_recall(const std::string& fastq_file,
 int
 main()
 {
-    genivf::log::set_level(genivf::log::Level::NONE);
+    set_level(Level::NONE);
 
     const std::string fastq_file = "data/left.fq";
     const std::string flat_index_file = "out.flat.givf";
