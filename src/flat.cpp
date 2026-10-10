@@ -17,22 +17,17 @@ namespace genivf
         log::info("Initialized IndexFlat with dim = {} bytes, ntotal = {}", dim, ntotal);
     }
 
-    void IndexFlat::add(std::span<const Point> points)
+    void IndexFlat::add(const std::span<const Point> points)
     {
         log::info("Adding {} points to the index...", points.size());
 
         for (const auto& point : points)
         {
-            if (point.values.size() != d_dim)
-            {
-                throw std::invalid_argument("IndexFlat::add: point dimension does not match index dimension");
-            }
+            GENIVF_ASSERT(point.values.size() == d_dim, "IndexFlat::add: point dimension must match index dimension");
 
             auto [it, inserted] = d_vectors.emplace(point.id, point);
-            if (!inserted)
-            {
-                throw std::invalid_argument("IndexFlat::add: duplicate point id " + std::to_string(point.id));
-            }
+
+            GENIVF_ASSERT(inserted, "IndexFlat::add: duplicate point id " + std::to_string(point.id));
 
             log::debug("Added point ID {}", point.id);
         }
@@ -41,7 +36,7 @@ namespace genivf
     }
 
     template<MetricType Metric>
-    std::vector<SearchResult> IndexFlat::search_impl(const Point& query, size_t k) const
+    std::vector<SearchResult> IndexFlat::search_impl(const Point& query, const size_t k) const
     {
         std::vector<SearchResult> candidates;
         candidates.reserve(d_ntotal);
@@ -57,7 +52,7 @@ namespace genivf
             {
                 dist = static_cast<double>(distance_hamming(query.values.data(), point.values.data(), d_dim));
             }
-            candidates.push_back({ id, dist });
+            candidates.push_back({ .id = id, .distance = dist });
         }
 
         const size_t total_scanned = candidates.size();
@@ -75,15 +70,14 @@ namespace genivf
     {
         log::info("Executing Search query: k = {}, metric = {}", k, static_cast<int>(metric));
 
-        if (query.values.size() != d_dim)
-        {
-            throw std::invalid_argument("IndexFlat::search: query dimension does not match index dimension");
-        }
+        GENIVF_ASSERT(query.values.size() == d_dim, "IndexFlat::search: query dimension must match index dimension");
+
         if (k == 0)
         {
             return {};
         }
 
+        // TODO(abdulrasheed): the L2 distance need to be removed after everything is done.
         switch (metric)
         {
             case MetricType::L2:
